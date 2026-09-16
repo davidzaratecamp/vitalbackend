@@ -19,6 +19,25 @@ router.get(
   })
 );
 
+// Aseguradoras habilitadas para un código postal — "Base Estados y
+// Coberturas Vital 2026". Antes de /:id no hace falta acá porque el path
+// es literal, no /:id.
+router.get(
+  '/aseguradoras-por-zip',
+  asyncHandler(async (req, res) => {
+    const zip = Number(req.query.codigoPostal);
+    if (!Number.isInteger(zip)) return res.json([]);
+    const rows = await db('cobertura_zip as c')
+      .join('aseguradoras as a', 'a.id', 'c.aseguradora_id')
+      .where('c.zip_desde', '<=', zip)
+      .andWhere('c.zip_hasta', '>=', zip)
+      .andWhere('a.is_active', true)
+      .distinct('a.id', 'a.nombre')
+      .orderBy('a.nombre');
+    res.json(rows);
+  })
+);
+
 const aseguradoraSchema = z.object({ nombre: z.string().min(2).max(80) });
 
 router.post(
