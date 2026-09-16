@@ -262,6 +262,23 @@ export async function buscarDuplicados({ social, correo, excluirId }) {
   }));
 }
 
+/**
+ * Compuerta antes de "Nuevo registro": el agente valida teléfono + código
+ * postal ANTES de que se le muestre el formulario. A diferencia de
+ * `buscarDuplicados` (SSN/correo, solo un aviso), esto se usa para decidir si
+ * se deja crear un cliente nuevo o no — por eso exige que AMBOS coincidan:
+ * el código postal solo, lo comparten cientos de personas, no identifica a
+ * nadie por sí solo.
+ */
+export async function buscarPorTelefonoYCP(telefono, codigoPostal) {
+  if (!telefono || !codigoPostal) return [];
+  return db('clientes as c')
+    .leftJoin('usuarios_sistema as ag', 'ag.id', 'c.agente_id')
+    .select('c.id', 'c.nombres', 'c.apellidos', 'c.estado', 'c.agente_id', 'ag.name as agente_nombre')
+    .where({ 'c.phone_1': telefono, 'c.codigo_postal': codigoPostal })
+    .limit(5);
+}
+
 /* ───────────────────────── Listado / detalle ───────────────────────── */
 
 export async function listarClientes(user, filters = {}) {
