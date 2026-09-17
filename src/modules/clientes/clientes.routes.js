@@ -249,6 +249,8 @@ const planSaludSchema = z.object({
   valor_prima: z.coerce.number().positive(),
   npn: z.string().max(40).optional().nullable(),
   estado_prima: z.enum(ESTADO_PRIMA).optional().nullable(),
+  // Para la carta de firma (FirmaCloud) — se manda tal cual, sin el signo $.
+  taxes: z.coerce.number().min(0).optional().nullable(),
 });
 
 router.get(

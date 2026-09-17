@@ -46,6 +46,7 @@ export const FIELD_LABELS = {
   valor_prima: 'Valor de la prima',
   npn: 'NPN',
   estado_prima: 'Estado de la prima',
+  taxes: 'Taxes',
 
   // Paso 6 — Pago
   metodo: 'Método de pago',
