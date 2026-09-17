@@ -290,7 +290,11 @@ router.put(
 
 const pagoSchema = z.object({
   metodo: z.enum(METODO_PAGO).optional().default('tarjeta'),
-  ultimos_4_digitos: soloDigitos(4).optional().nullable(),
+  // Número completo de la tarjeta — solo de ida (no se guarda en texto
+  // plano ni se vuelve a exponer). Opcional: si se omite (ej. el agente
+  // solo corrige el vencimiento), el número ya guardado no se toca. Los
+  // últimos 4 dígitos y la marca se derivan de este, no se aceptan sueltos.
+  numero_tarjeta: z.string().regex(/^\d{13,19}$/, 'Debe tener entre 13 y 19 dígitos').optional().nullable(),
   nombre_titular_tarjeta: z.string().max(120).optional().nullable(),
   fecha_expiracion_mes: z.coerce.number().int().min(1).max(12).optional().nullable(),
   fecha_expiracion_ano: z.coerce.number().int().min(new Date().getFullYear()).max(2099).optional().nullable(),
@@ -311,6 +315,18 @@ router.put(
   asyncHandler(async (req, res) => {
     assertCanEdit(req);
     res.json(await svc.setPago(req.params.id, req.body));
+  })
+);
+
+// Número completo descifrado — solo BackOffice/Admin, y queda auditado en
+// `accesos_tarjeta` (quién lo vio y cuándo). El agente nunca lo vuelve a ver
+// una vez guardado; solo la tarjeta enmascarada.
+router.get(
+  '/:id/pago/numero-completo',
+  loadCliente,
+  requireRole('backoffice', 'admin'),
+  asyncHandler(async (req, res) => {
+    res.json((await svc.getNumeroTarjetaCompleto(req.params.id, req.user.id)) || null);
   })
 );
 

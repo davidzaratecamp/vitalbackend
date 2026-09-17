@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import { db } from '../../db/knex.js';
 import { notFound, forbidden, conflict, badRequest } from '../../utils/httpError.js';
 import { notificarRol } from '../notificaciones/notificaciones.service.js';
+import { encryptCard, decryptCard, detectarMarca } from '../../utils/cardCrypto.js';
 
 const EDITABLE_STATES = ['borrador', 'rechazado_backoffice'];
 
@@ -188,18 +189,57 @@ export async function getPlanSaludHistorial(clienteId) {
 
 /* ───────────────────────── Paso 6 — Pago ───────────────────────── */
 
-export async function setPago(clienteId, data) {
+const PAGO_COLUMNS_PUBLICAS = [
+  'id',
+  'cliente_id',
+  'metodo',
+  'ultimos_4_digitos',
+  'marca_tarjeta',
+  'nombre_titular_tarjeta',
+  'fecha_expiracion_mes',
+  'fecha_expiracion_ano',
+  'created_at',
+  'updated_at',
+];
+
+/**
+ * `numero_tarjeta` (si viene) se cifra acá — nunca se guarda en texto plano
+ * ni se deja pasar tal cual a la fila. `ultimos_4_digitos` y `marca_tarjeta`
+ * se derivan del número completo, no se aceptan sueltos. Si no viene
+ * `numero_tarjeta` (ej. el agente solo corrige el nombre o el vencimiento),
+ * el número ya guardado no se toca.
+ */
+export async function setPago(clienteId, { numero_tarjeta, ...data }) {
+  const payload = { ...data };
+  if (numero_tarjeta) {
+    payload.numero_tarjeta_cifrado = encryptCard(numero_tarjeta);
+    payload.marca_tarjeta = detectarMarca(numero_tarjeta);
+    payload.ultimos_4_digitos = numero_tarjeta.slice(-4);
+  }
+
   const existing = await db('informacion_pago').where({ cliente_id: clienteId }).first();
   if (existing) {
-    await db('informacion_pago').where({ id: existing.id }).update({ ...data, updated_at: db.fn.now() });
-    return db('informacion_pago').where({ id: existing.id }).first();
+    await db('informacion_pago').where({ id: existing.id }).update({ ...payload, updated_at: db.fn.now() });
+    return db('informacion_pago').where({ id: existing.id }).select(PAGO_COLUMNS_PUBLICAS).first();
   }
-  const [id] = await db('informacion_pago').insert({ ...data, cliente_id: clienteId });
-  return db('informacion_pago').where({ id }).first();
+  const [id] = await db('informacion_pago').insert({ ...payload, cliente_id: clienteId });
+  return db('informacion_pago').where({ id }).select(PAGO_COLUMNS_PUBLICAS).first();
 }
 
+/** Nunca incluye `numero_tarjeta_cifrado` — ver getNumeroTarjetaCompleto. */
 export async function getPago(clienteId) {
-  return db('informacion_pago').where({ cliente_id: clienteId }).first();
+  return db('informacion_pago').where({ cliente_id: clienteId }).select(PAGO_COLUMNS_PUBLICAS).first();
+}
+
+/**
+ * Descifra el número completo — solo para backoffice/admin (ver la ruta) y
+ * deja un registro de auditoría en `accesos_tarjeta` en cada llamada.
+ */
+export async function getNumeroTarjetaCompleto(clienteId, userId) {
+  const row = await db('informacion_pago').where({ cliente_id: clienteId }).first();
+  if (!row?.numero_tarjeta_cifrado) return null;
+  await db('accesos_tarjeta').insert({ cliente_id: clienteId, usuario_id: userId });
+  return { numero_tarjeta: decryptCard(row.numero_tarjeta_cifrado), marca_tarjeta: row.marca_tarjeta };
 }
 
 /* ───────────────────────── Finalizar / reenviar ───────────────────────── */

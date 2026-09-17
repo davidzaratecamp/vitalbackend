@@ -37,6 +37,7 @@ export const ESTADO_PRIMA = [
 ];
 
 export const METODO_PAGO = ['tarjeta', 'debito_automatico', 'otro'];
+export const MARCA_TARJETA = ['Visa', 'Mastercard', 'Otra'];
 
 export const ESTADO_CLIENTE = ['borrador', 'pendiente_backoffice', 'aprobado', 'rechazado_backoffice'];
 export const ESTADO_CLIENTE_LABEL = {

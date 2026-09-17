@@ -54,7 +54,9 @@ export const FIELD_LABELS = {
 
   // Paso 6 — Pago
   metodo: 'Método de pago',
+  numero_tarjeta: 'Número de tarjeta',
   ultimos_4_digitos: 'Últimos 4 dígitos de la tarjeta',
+  marca_tarjeta: 'Marca de la tarjeta',
   nombre_titular_tarjeta: 'Nombre del titular de la tarjeta',
   fecha_expiracion_mes: 'Mes de vencimiento',
   fecha_expiracion_ano: 'Año de vencimiento',

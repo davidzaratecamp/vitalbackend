@@ -34,6 +34,10 @@ export const env = {
     expiresIn: process.env.JWT_EXPIRES_IN || '8h',
   },
 
+  // Cifra el número completo de tarjeta antes de guardarlo (ver
+  // src/utils/cardCrypto.js) — nunca en texto plano, nunca en el repo.
+  cardEncryptionKey: required('CARD_ENCRYPTION_KEY'),
+
   seedAdmin: {
     name: process.env.SEED_ADMIN_NAME || 'Administrador Vital',
     email: process.env.SEED_ADMIN_EMAIL || 'admin@vital.local',
