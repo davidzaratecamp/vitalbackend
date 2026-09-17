@@ -251,6 +251,16 @@ const planSaludSchema = z.object({
   estado_prima: z.enum(ESTADO_PRIMA).optional().nullable(),
   // Para la carta de firma (FirmaCloud) — se manda tal cual, sin el signo $.
   taxes: z.coerce.number().min(0).optional().nullable(),
+  // pd/sd/gd: lo que el agente ve en la pantalla "Usted paga" de la otra
+  // plataforma (ej. "Sin cargo por visita desde el día 1", "50% coaseguro
+  // después del deducible") — texto libre, no un número limpio, aunque la
+  // API de FirmaCloud los pida como "numérico".
+  pd: z.string().max(120).optional().nullable(),
+  sd: z.string().max(120).optional().nullable(),
+  gd: z.string().max(120).optional().nullable(),
+  // A qué productor (catálogo `npn_productores`) pertenece el NPN de esta
+  // venta — independiente del campo `npn` de texto libre de BackOffice.
+  npn_productor_id: z.coerce.number().int().positive().optional().nullable(),
 });
 
 router.get(

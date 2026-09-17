@@ -171,7 +171,8 @@ export async function setPlanSalud(clienteId, data, userId, versionOrigen = 'cot
 export async function getPlanSaludActual(clienteId) {
   return db('planes_salud as p')
     .leftJoin('aseguradoras as a', 'a.id', 'p.aseguradora_id')
-    .select('p.*', 'a.nombre as aseguradora_nombre')
+    .leftJoin('npn_productores as np', 'np.id', 'p.npn_productor_id')
+    .select('p.*', 'a.nombre as aseguradora_nombre', 'np.nombre as npn_productor_nombre')
     .where({ 'p.cliente_id': clienteId, 'p.is_current': true })
     .first();
 }
@@ -179,7 +180,8 @@ export async function getPlanSaludActual(clienteId) {
 export async function getPlanSaludHistorial(clienteId) {
   return db('planes_salud as p')
     .leftJoin('aseguradoras as a', 'a.id', 'p.aseguradora_id')
-    .select('p.*', 'a.nombre as aseguradora_nombre')
+    .leftJoin('npn_productores as np', 'np.id', 'p.npn_productor_id')
+    .select('p.*', 'a.nombre as aseguradora_nombre', 'np.nombre as npn_productor_nombre')
     .where({ 'p.cliente_id': clienteId })
     .orderBy('p.created_at', 'desc');
 }

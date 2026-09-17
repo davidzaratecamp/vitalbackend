@@ -47,6 +47,10 @@ export const FIELD_LABELS = {
   npn: 'NPN',
   estado_prima: 'Estado de la prima',
   taxes: 'Taxes',
+  pd: 'Atención primaria',
+  sd: 'Atención de especialista',
+  gd: 'Medicamento genérico',
+  npn_productor_id: 'Productor (NPN)',
 
   // Paso 6 — Pago
   metodo: 'Método de pago',

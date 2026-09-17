@@ -38,6 +38,50 @@ router.get(
   })
 );
 
+// Igual que /aseguradoras, para el catálogo de productores con NPN (ver
+// migración 20260917130000_npn_productores).
+router.get(
+  '/npn-productores',
+  asyncHandler(async (req, res) => {
+    const q = db('npn_productores').orderBy('nombre');
+    if (req.query.active !== 'false') q.where('is_active', true);
+    res.json(await q);
+  })
+);
+
+const npnProductorSchema = z.object({
+  nombre: z.string().min(2).max(120),
+  npn: z.string().max(40).optional().nullable(),
+});
+
+router.post(
+  '/npn-productores',
+  requireRole('admin'),
+  validate(npnProductorSchema),
+  asyncHandler(async (req, res) => {
+    const [id] = await db('npn_productores').insert({ nombre: req.body.nombre, npn: req.body.npn ?? null });
+    res.status(201).json(await db('npn_productores').where({ id }).first());
+  })
+);
+
+router.patch(
+  '/npn-productores/:id',
+  requireRole('admin'),
+  validate(
+    z.object({
+      nombre: z.string().min(2).max(120).optional(),
+      npn: z.string().max(40).optional().nullable(),
+      is_active: z.coerce.boolean().optional(),
+    })
+  ),
+  asyncHandler(async (req, res) => {
+    const row = await db('npn_productores').where({ id: req.params.id }).first();
+    if (!row) throw notFound('Productor no encontrado');
+    await db('npn_productores').where({ id: row.id }).update(req.body);
+    res.json(await db('npn_productores').where({ id: row.id }).first());
+  })
+);
+
 const aseguradoraSchema = z.object({ nombre: z.string().min(2).max(80) });
 
 router.post(
