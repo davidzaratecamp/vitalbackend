@@ -38,6 +38,12 @@ export const env = {
   // src/utils/cardCrypto.js) — nunca en texto plano, nunca en el repo.
   cardEncryptionKey: required('CARD_ENCRYPTION_KEY'),
 
+  // Envío de la carta de firma (Carta CMS Vital) — ver src/utils/firmaCloudClient.js.
+  firmaCloud: {
+    apiKey: required('FIRMACLOUD_API_KEY'),
+    baseUrl: process.env.FIRMACLOUD_BASE_URL || 'https://firmahealthcare.com/api',
+  },
+
   seedAdmin: {
     name: process.env.SEED_ADMIN_NAME || 'Administrador Vital',
     email: process.env.SEED_ADMIN_EMAIL || 'admin@vital.local',

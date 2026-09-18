@@ -173,7 +173,7 @@ export async function getPlanSaludActual(clienteId) {
   return db('planes_salud as p')
     .leftJoin('aseguradoras as a', 'a.id', 'p.aseguradora_id')
     .leftJoin('npn_productores as np', 'np.id', 'p.npn_productor_id')
-    .select('p.*', 'a.nombre as aseguradora_nombre', 'np.nombre as npn_productor_nombre')
+    .select('p.*', 'a.nombre as aseguradora_nombre', 'np.nombre as npn_productor_nombre', 'np.npn as npn_productor_npn')
     .where({ 'p.cliente_id': clienteId, 'p.is_current': true })
     .first();
 }

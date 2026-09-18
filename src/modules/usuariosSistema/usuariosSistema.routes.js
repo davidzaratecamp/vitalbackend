@@ -10,7 +10,7 @@ import { notFound, badRequest } from '../../utils/httpError.js';
 const router = Router();
 router.use(requireAuth);
 
-const COLS = ['id', 'name', 'email', 'role', 'avatar_color', 'is_active', 'created_at'];
+const COLS = ['id', 'name', 'email', 'role', 'avatar_color', 'is_active', 'cedula', 'phone', 'created_at'];
 const AVATAR_COLORS = ['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#ef4444', '#14b8a6'];
 const randomColor = () => AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)];
 
@@ -41,6 +41,11 @@ const createSchema = z.object({
   email: z.string().email().max(190),
   password: z.string().min(8),
   role: z.enum(['agente', 'backoffice', 'admin']),
+  // Los pide la carta de firma (FirmaCloud): agentCedula es obligatorio al
+  // enviar, agentPhone es opcional — por eso ninguno es obligatorio acá,
+  // para no bloquear la creación de la cuenta si todavía no se tienen.
+  cedula: z.string().max(40).optional().nullable(),
+  phone: z.string().max(20).optional().nullable(),
 });
 
 router.post(
@@ -57,6 +62,8 @@ router.post(
       email,
       password_hash,
       role,
+      cedula: req.body.cedula ?? null,
+      phone: req.body.phone ?? null,
       avatar_color: randomColor(),
     });
     res.status(201).json(await db('usuarios_sistema').select(COLS).where({ id }).first());
@@ -69,6 +76,8 @@ const updateSchema = z.object({
   role: z.enum(['agente', 'backoffice', 'admin']).optional(),
   is_active: z.coerce.boolean().optional(),
   password: z.string().min(8).optional(),
+  cedula: z.string().max(40).optional().nullable(),
+  phone: z.string().max(20).optional().nullable(),
 });
 
 router.patch(
@@ -80,12 +89,14 @@ router.patch(
     if (!user) throw notFound('Usuario no encontrado');
 
     const patch = { updated_at: db.fn.now() };
-    const { name, email, role, is_active, password } = req.body;
+    const { name, email, role, is_active, password, cedula, phone } = req.body;
     if (name !== undefined) patch.name = name;
     if (email !== undefined) patch.email = email;
     if (role !== undefined) patch.role = role;
     if (is_active !== undefined) patch.is_active = is_active;
     if (password) patch.password_hash = await bcrypt.hash(password, 10);
+    if (cedula !== undefined) patch.cedula = cedula;
+    if (phone !== undefined) patch.phone = phone;
 
     await db('usuarios_sistema').where({ id: user.id }).update(patch);
     res.json(await db('usuarios_sistema').select(COLS).where({ id: user.id }).first());

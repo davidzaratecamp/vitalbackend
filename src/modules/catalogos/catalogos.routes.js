@@ -9,6 +9,23 @@ import { notFound } from '../../utils/httpError.js';
 const router = Router();
 router.use(requireAuth);
 
+/**
+ * Estado "verdadero" de un ZIP, cuando varios rangos de cobertura_zip lo
+ * contienen — algunos rangos de la fuente se solapan en los bordes (ej.
+ * Georgia 30002-39901 se traga Florida/Alabama/Tennessee/Mississippi
+ * enteros, Texas hace lo mismo con Oklahoma/Colorado/Arizona). Se prefiere
+ * el rango más angosto: es el dato más específico, un rango mucho más
+ * ancho es indicio de que es una aproximación, no el estado real del ZIP.
+ */
+async function resolverEstadoPorZip(zip) {
+  const fila = await db('cobertura_zip')
+    .where('zip_desde', '<=', zip)
+    .andWhere('zip_hasta', '>=', zip)
+    .orderByRaw('(zip_hasta - zip_desde) asc')
+    .first('estado');
+  return fila?.estado ?? null;
+}
+
 // Cualquier usuario autenticado puede leer el catálogo (lo usa el Paso 5 del Agente).
 router.get(
   '/aseguradoras',
@@ -27,10 +44,40 @@ router.get(
   asyncHandler(async (req, res) => {
     const zip = Number(req.query.codigoPostal);
     if (!Number.isInteger(zip)) return res.json([]);
+    const estado = await resolverEstadoPorZip(zip);
+    if (!estado) return res.json([]);
     const rows = await db('cobertura_zip as c')
       .join('aseguradoras as a', 'a.id', 'c.aseguradora_id')
-      .where('c.zip_desde', '<=', zip)
-      .andWhere('c.zip_hasta', '>=', zip)
+      .where('c.estado', estado)
+      .andWhere('a.is_active', true)
+      .distinct('a.id', 'a.nombre')
+      .orderBy('a.nombre');
+    res.json(rows);
+  })
+);
+
+/**
+ * Aseguradoras que un PRODUCTOR específico puede vender para un código
+ * postal — "BaseEstadosy CoberturasVitaldato 2026.xlsx". A diferencia de
+ * /aseguradoras-por-zip (que solo mira el estado), acá dos productores en
+ * el mismo estado pueden tener listas distintas (cada uno está licenciado
+ * con compañías distintas) — por eso primero se resuelve el/los estado(s)
+ * del ZIP vía cobertura_zip, y sobre eso se filtra por productor.
+ */
+router.get(
+  '/aseguradoras-por-productor',
+  asyncHandler(async (req, res) => {
+    const zip = Number(req.query.codigoPostal);
+    const productorId = Number(req.query.productorId);
+    if (!Number.isInteger(zip) || !Number.isInteger(productorId)) return res.json([]);
+
+    const estado = await resolverEstadoPorZip(zip);
+    if (!estado) return res.json([]);
+
+    const rows = await db('cobertura_productor as c')
+      .join('aseguradoras as a', 'a.id', 'c.aseguradora_id')
+      .where('c.npn_productor_id', productorId)
+      .andWhere('c.estado', estado)
       .andWhere('a.is_active', true)
       .distinct('a.id', 'a.nombre')
       .orderBy('a.nombre');

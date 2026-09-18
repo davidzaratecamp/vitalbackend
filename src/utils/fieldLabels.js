@@ -74,4 +74,6 @@ export const FIELD_LABELS = {
   name: 'Nombre',
   current_password: 'Contraseña actual',
   new_password: 'Nueva contraseña',
+  cedula: 'Cédula',
+  phone: 'Teléfono',
 };
