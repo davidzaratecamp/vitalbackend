@@ -351,6 +351,8 @@ router.post(
   loadCliente,
   validate(observacionSchema),
   asyncHandler(async (req, res) => {
+    // El supervisor es solo-lectura — ni siquiera deja una nota.
+    if (req.user.role === 'supervisor') throw forbidden('Los supervisores no pueden agregar observaciones');
     res.status(201).json(await svc.agregarObservacion(req.params.id, req.user.id, req.body.comentario));
   })
 );

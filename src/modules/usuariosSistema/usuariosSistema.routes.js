@@ -40,7 +40,7 @@ const createSchema = z.object({
   name: z.string().min(2).max(120),
   email: z.string().email().max(190),
   password: z.string().min(8),
-  role: z.enum(['agente', 'backoffice', 'admin']),
+  role: z.enum(['agente', 'backoffice', 'admin', 'supervisor']),
   // Los pide la carta de firma (FirmaCloud): agentCedula es obligatorio al
   // enviar, agentPhone es opcional — por eso ninguno es obligatorio acá,
   // para no bloquear la creación de la cuenta si todavía no se tienen.
@@ -73,7 +73,7 @@ router.post(
 const updateSchema = z.object({
   name: z.string().min(2).max(120).optional(),
   email: z.string().email().max(190).optional(),
-  role: z.enum(['agente', 'backoffice', 'admin']).optional(),
+  role: z.enum(['agente', 'backoffice', 'admin', 'supervisor']).optional(),
   is_active: z.coerce.boolean().optional(),
   password: z.string().min(8).optional(),
   cedula: z.string().max(40).optional().nullable(),

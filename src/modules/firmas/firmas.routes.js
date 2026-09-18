@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { asyncHandler } from '../../utils/asyncHandler.js';
 import { requireAuth } from '../../middleware/auth.js';
+import { forbidden } from '../../utils/httpError.js';
 import { getClienteOr404, assertOwnerIfAgente } from '../clientes/clientes.service.js';
 import * as svc from './firmas.service.js';
 
@@ -26,6 +27,8 @@ router.get(
 router.post(
   '/cliente/:clienteId/enviar',
   asyncHandler(async (req, res) => {
+    // El supervisor es solo-lectura — ve el estado de la carta, no la envía.
+    if (req.user.role === 'supervisor') throw forbidden('Los supervisores no pueden enviar la carta de firma');
     await assertAccess(req);
     res.status(201).json(await svc.enviarFirma(req.params.clienteId, req.user.id));
   })

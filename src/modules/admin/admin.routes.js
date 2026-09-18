@@ -5,7 +5,10 @@ import { getClienteDetalle } from '../clientes/clientes.service.js';
 import * as svc from './admin.service.js';
 
 const router = Router();
-router.use(requireAuth, requireRole('admin'));
+// Todas las rutas de este módulo son de solo lectura — por eso el
+// supervisor entra con el mismo requireRole que admin, sin duplicar
+// pantallas ni endpoints (ver migración 20260919100000_rol_supervisor).
+router.use(requireAuth, requireRole('admin', 'supervisor'));
 
 function parseFilters(req) {
   const q = req.query || {};
