@@ -60,6 +60,7 @@ export const FIELD_LABELS = {
   nombre_titular_tarjeta: 'Nombre del titular de la tarjeta',
   fecha_expiracion_mes: 'Mes de vencimiento',
   fecha_expiracion_ano: 'Año de vencimiento',
+  data_point: 'Data Point',
 
   // Observaciones / BackOffice
   comentario: 'Comentario',

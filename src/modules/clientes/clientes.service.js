@@ -201,13 +201,27 @@ const PAGO_COLUMNS_PUBLICAS = [
   'created_at',
   'updated_at',
 ];
+// Solo para leer de la BD — nunca se manda tal cual al cliente HTTP, ver
+// pagoParaMostrar().
+const PAGO_COLUMNS_INTERNAS = [...PAGO_COLUMNS_PUBLICAS, 'data_point'];
+
+/** Quita `data_point` de la respuesta (ni el agente ni nadie fuera de
+ * getDataPointCompleto lo ve) y en su lugar deja un booleano — para que la
+ * UI sepa si ya hay algo guardado sin revelar el contenido. */
+function pagoParaMostrar(row) {
+  if (!row) return row;
+  const { data_point, ...resto } = row;
+  return { ...resto, tiene_data_point: !!data_point };
+}
 
 /**
  * `numero_tarjeta` (si viene) se cifra acá — nunca se guarda en texto plano
  * ni se deja pasar tal cual a la fila. `ultimos_4_digitos` y `marca_tarjeta`
  * se derivan del número completo, no se aceptan sueltos. Si no viene
  * `numero_tarjeta` (ej. el agente solo corrige el nombre o el vencimiento),
- * el número ya guardado no se toca.
+ * el número ya guardado no se toca. `data_point` es texto libre (NO se
+ * cifra: no es un dato de pago regulado, solo se pidió que el agente no
+ * pueda volver a leerlo — ver pagoParaMostrar/getDataPointCompleto).
  */
 export async function setPago(clienteId, { numero_tarjeta, ...data }) {
   const payload = { ...data };
@@ -220,15 +234,16 @@ export async function setPago(clienteId, { numero_tarjeta, ...data }) {
   const existing = await db('informacion_pago').where({ cliente_id: clienteId }).first();
   if (existing) {
     await db('informacion_pago').where({ id: existing.id }).update({ ...payload, updated_at: db.fn.now() });
-    return db('informacion_pago').where({ id: existing.id }).select(PAGO_COLUMNS_PUBLICAS).first();
+    return pagoParaMostrar(await db('informacion_pago').where({ id: existing.id }).select(PAGO_COLUMNS_INTERNAS).first());
   }
   const [id] = await db('informacion_pago').insert({ ...payload, cliente_id: clienteId });
-  return db('informacion_pago').where({ id }).select(PAGO_COLUMNS_PUBLICAS).first();
+  return pagoParaMostrar(await db('informacion_pago').where({ id }).select(PAGO_COLUMNS_INTERNAS).first());
 }
 
-/** Nunca incluye `numero_tarjeta_cifrado` — ver getNumeroTarjetaCompleto. */
+/** Nunca incluye `numero_tarjeta_cifrado` ni `data_point` — ver
+ * getNumeroTarjetaCompleto / getDataPointCompleto. */
 export async function getPago(clienteId) {
-  return db('informacion_pago').where({ cliente_id: clienteId }).select(PAGO_COLUMNS_PUBLICAS).first();
+  return pagoParaMostrar(await db('informacion_pago').where({ cliente_id: clienteId }).select(PAGO_COLUMNS_INTERNAS).first());
 }
 
 /**
@@ -240,6 +255,12 @@ export async function getNumeroTarjetaCompleto(clienteId, userId) {
   if (!row?.numero_tarjeta_cifrado) return null;
   await db('accesos_tarjeta').insert({ cliente_id: clienteId, usuario_id: userId });
   return { numero_tarjeta: decryptCard(row.numero_tarjeta_cifrado), marca_tarjeta: row.marca_tarjeta };
+}
+
+/** El agente nunca lo ve — solo backoffice/admin (ver la ruta). */
+export async function getDataPointCompleto(clienteId) {
+  const row = await db('informacion_pago').where({ cliente_id: clienteId }).first('data_point');
+  return { data_point: row?.data_point ?? null };
 }
 
 /* ───────────────────────── Finalizar / reenviar ───────────────────────── */

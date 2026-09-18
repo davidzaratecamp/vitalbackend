@@ -298,6 +298,10 @@ const pagoSchema = z.object({
   nombre_titular_tarjeta: z.string().max(120).optional().nullable(),
   fecha_expiracion_mes: z.coerce.number().int().min(1).max(12).optional().nullable(),
   fecha_expiracion_ano: z.coerce.number().int().min(new Date().getFullYear()).max(2099).optional().nullable(),
+  // Nota de texto libre — el agente la escribe pero no la vuelve a ver
+  // (queda enmascarada mientras escribe y después). Solo BackOffice/Admin
+  // pueden revelarla (ver GET /:id/pago/data-point).
+  data_point: z.string().max(300).optional().nullable(),
 });
 
 router.get(
@@ -327,6 +331,18 @@ router.get(
   requireRole('backoffice', 'admin'),
   asyncHandler(async (req, res) => {
     res.json((await svc.getNumeroTarjetaCompleto(req.params.id, req.user.id)) || null);
+  })
+);
+
+// "Data Point" — solo BackOffice/Admin. El agente nunca lo vuelve a ver,
+// ni siquiera él mismo (a diferencia de la tarjeta, no queda auditado:
+// no es un dato de pago regulado, solo se pidió ocultarlo del agente).
+router.get(
+  '/:id/pago/data-point',
+  loadCliente,
+  requireRole('backoffice', 'admin'),
+  asyncHandler(async (req, res) => {
+    res.json(await svc.getDataPointCompleto(req.params.id));
   })
 );
 
