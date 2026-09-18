@@ -44,7 +44,30 @@ async function hashRespuesta(payload) {
   return payload;
 }
 
+/**
+ * Antes de crear/actualizar el titular: si el SSN o el correo ya
+ * pertenecen a OTRO cliente, corta acá con un mensaje que dice exactamente
+ * a quién — en vez de dejar que MySQL rechace el INSERT/UPDATE con un
+ * "Ya existe un registro con ese valor único" genérico (no dice el campo
+ * ni a quién pertenece, y el agente queda sin poder saber qué corregir).
+ */
+async function assertSocialCorreoDisponibles({ social, correo_electronico }, excluirId) {
+  const conflictos = [];
+  for (const [campo, valor, etiqueta] of [
+    ['social', social, 'Social Security Number'],
+    ['correo_electronico', correo_electronico, 'Correo electrónico'],
+  ]) {
+    if (!valor) continue;
+    const q = db('clientes').where({ [campo]: valor }).first('id', 'nombres', 'apellidos');
+    if (excluirId) q.andWhere('id', '!=', excluirId);
+    const row = await q;
+    if (row) conflictos.push(`${etiqueta}: ya lo tiene ${row.nombres} ${row.apellidos} (ID ${row.id})`);
+  }
+  if (conflictos.length) throw conflict('Ya existe otro cliente con ese dato — verifica que no sea un error de tipeo', conflictos);
+}
+
 export async function crearCliente(agenteId, data) {
+  await assertSocialCorreoDisponibles(data);
   const payload = await hashRespuesta({ ...data, agente_id: agenteId, estado: 'borrador' });
   const [id] = await db('clientes').insert(payload);
   await logEstado(id, null, 'borrador', agenteId);
@@ -52,6 +75,7 @@ export async function crearCliente(agenteId, data) {
 }
 
 export async function actualizarTitular(id, data) {
+  await assertSocialCorreoDisponibles(data, id);
   const payload = await hashRespuesta({ ...data, updated_at: db.fn.now() });
   await db('clientes').where({ id }).update(payload);
   return getClienteOr404(id);
