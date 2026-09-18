@@ -9,23 +9,6 @@ import { notFound } from '../../utils/httpError.js';
 const router = Router();
 router.use(requireAuth);
 
-/**
- * Estado "verdadero" de un ZIP, cuando varios rangos de cobertura_zip lo
- * contienen — algunos rangos de la fuente se solapan en los bordes (ej.
- * Georgia 30002-39901 se traga Florida/Alabama/Tennessee/Mississippi
- * enteros, Texas hace lo mismo con Oklahoma/Colorado/Arizona). Se prefiere
- * el rango más angosto: es el dato más específico, un rango mucho más
- * ancho es indicio de que es una aproximación, no el estado real del ZIP.
- */
-async function resolverEstadoPorZip(zip) {
-  const fila = await db('cobertura_zip')
-    .where('zip_desde', '<=', zip)
-    .andWhere('zip_hasta', '>=', zip)
-    .orderByRaw('(zip_hasta - zip_desde) asc')
-    .first('estado');
-  return fila?.estado ?? null;
-}
-
 // Cualquier usuario autenticado puede leer el catálogo (lo usa el Paso 5 del Agente).
 router.get(
   '/aseguradoras',
@@ -36,15 +19,16 @@ router.get(
   })
 );
 
-// Aseguradoras habilitadas para un código postal — "Base Estados y
-// Coberturas Vital 2026". Antes de /:id no hace falta acá porque el path
-// es literal, no /:id.
+// Aseguradoras habilitadas para un estado — "Base Estados y Coberturas
+// Vital 2026". Ya no se usa el código postal (a pedido del usuario) — el
+// agente elige el estado directo en el Paso 1 (LocationSelector), sin la
+// ambigüedad de resolver el estado a partir de rangos de ZIP que se
+// solapaban entre sí (ver historial de esta ruta). Antes de /:id no hace
+// falta acá porque el path es literal, no /:id.
 router.get(
-  '/aseguradoras-por-zip',
+  '/aseguradoras-por-estado',
   asyncHandler(async (req, res) => {
-    const zip = Number(req.query.codigoPostal);
-    if (!Number.isInteger(zip)) return res.json([]);
-    const estado = await resolverEstadoPorZip(zip);
+    const estado = req.query.estado;
     if (!estado) return res.json([]);
     const rows = await db('cobertura_zip as c')
       .join('aseguradoras as a', 'a.id', 'c.aseguradora_id')
@@ -57,22 +41,17 @@ router.get(
 );
 
 /**
- * Aseguradoras que un PRODUCTOR específico puede vender para un código
- * postal — "BaseEstadosy CoberturasVitaldato 2026.xlsx". A diferencia de
- * /aseguradoras-por-zip (que solo mira el estado), acá dos productores en
- * el mismo estado pueden tener listas distintas (cada uno está licenciado
- * con compañías distintas) — por eso primero se resuelve el/los estado(s)
- * del ZIP vía cobertura_zip, y sobre eso se filtra por productor.
+ * Aseguradoras que un PRODUCTOR específico puede vender en un estado —
+ * "BaseEstadosy CoberturasVitaldato 2026.xlsx". Dos productores en el
+ * mismo estado pueden tener listas distintas (cada uno licenciado con
+ * compañías distintas).
  */
 router.get(
   '/aseguradoras-por-productor',
   asyncHandler(async (req, res) => {
-    const zip = Number(req.query.codigoPostal);
+    const estado = req.query.estado;
     const productorId = Number(req.query.productorId);
-    if (!Number.isInteger(zip) || !Number.isInteger(productorId)) return res.json([]);
-
-    const estado = await resolverEstadoPorZip(zip);
-    if (!estado) return res.json([]);
+    if (!estado || !Number.isInteger(productorId)) return res.json([]);
 
     const rows = await db('cobertura_productor as c')
       .join('aseguradoras as a', 'a.id', 'c.aseguradora_id')

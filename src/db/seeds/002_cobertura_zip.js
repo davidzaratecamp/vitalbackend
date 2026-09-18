@@ -6,13 +6,19 @@
  * Cada fila del Excel traía las aseguradoras de un estado en un solo texto
  * separado por guiones (p. ej. "OSCAR - AMBETTER - UHC"); ya vienen
  * separadas acá en un arreglo.
+ *
+ * `estado` en inglés (igual que `clientes.estado_us` y `UBICACIONES` del
+ * frontend) — la cobertura ya no se resuelve por rango de ZIP, se busca
+ * directo por el estado que el agente elige en el Paso 1, así que el
+ * nombre tiene que calzar exacto con esa lista (por eso "North/South
+ * Carolina" y no "Carolina del Norte/Sur" en español).
  */
 const COBERTURA = [
   { estado: 'Alabama', desde: 35004, hasta: 36925, aseguradoras: ['Ambetter', 'UHC'] },
   { estado: 'Arizona', desde: 85001, hasta: 86556, aseguradoras: ['Oscar', 'Ambetter', 'UHC', 'Antidote'] },
   { estado: 'California', desde: 90001, hasta: 96162, aseguradoras: ['Anthem', 'Wellpoint', 'Highmark', 'Kaiser', 'BCBS'] },
-  { estado: 'Carolina del Norte', desde: 27006, hasta: 28909, aseguradoras: ['Oscar', 'Ambetter', 'UHC', 'CareSource', 'BCBS'] },
-  { estado: 'Carolina del Sur', desde: 29001, hasta: 29945, aseguradoras: ['Ambetter', 'UHC'] },
+  { estado: 'North Carolina', desde: 27006, hasta: 28909, aseguradoras: ['Oscar', 'Ambetter', 'UHC', 'CareSource', 'BCBS'] },
+  { estado: 'South Carolina', desde: 29001, hasta: 29945, aseguradoras: ['Ambetter', 'UHC'] },
   { estado: 'Colorado', desde: 80001, hasta: 81658, aseguradoras: ['Anthem', 'Wellpoint', 'UHC', 'Kaiser'] },
   { estado: 'Florida', desde: 32003, hasta: 34997, aseguradoras: ['Oscar', 'Anthem', 'Wellpoint', 'Ambetter', 'UHC', 'Florida Blue', 'AmeriHealth', 'Health First'] },
   { estado: 'Georgia', desde: 30002, hasta: 39901, aseguradoras: ['Oscar', 'Anthem', 'Wellpoint', 'Ambetter', 'UHC', 'CareSource', 'Kaiser', 'Alliant'] },

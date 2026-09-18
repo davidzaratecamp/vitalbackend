@@ -18,15 +18,14 @@ function construirPayload(cliente, agente) {
   const nombreCompleto = `${cliente.nombres} ${cliente.apellidos}`;
   const plan = cliente.plan_salud;
 
+  // agentPhone/agentEmail: a pedido del usuario, no se incluyen en la carta.
   const vital = {
     clientName: nombreCompleto,
     agentName: agente.name,
-    agentEmail: agente.email,
     householdContactName: nombreCompleto,
     householdContactPhone: cliente.phone_1,
     householdContactEmail: cliente.correo_electronico,
   };
-  if (agente.phone) vital.agentPhone = agente.phone;
   if (plan?.npn_productor_npn) vital.agentNPN = plan.npn_productor_npn;
   if (plan) {
     if (plan.taxes != null) vital.taxes = String(plan.taxes);

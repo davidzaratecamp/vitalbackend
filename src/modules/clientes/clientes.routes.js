@@ -100,11 +100,11 @@ router.get(
   })
 );
 
-// Compuerta antes de "Nuevo registro" — ver buscarPorTelefonoYCP.
+// Compuerta antes de "Nuevo registro" — ver buscarPorTelefono.
 router.get(
   '/verificar-telefono',
   asyncHandler(async (req, res) => {
-    res.json(await svc.buscarPorTelefonoYCP(req.query.telefono, req.query.codigoPostal));
+    res.json(await svc.buscarPorTelefono(req.query.telefono));
   })
 );
 
