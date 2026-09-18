@@ -269,11 +269,15 @@ export async function finalizar(clienteId, userId) {
   const cliente = await getClienteOr404(clienteId);
   assertEditable(cliente);
 
-  const [ingresoTitular, plan, pago, evidenciasCount] = await Promise.all([
+  const [ingresoTitular, plan, pago, evidenciasCount, ultimaFirma] = await Promise.all([
     db('ingresos').where({ cliente_id: clienteId }).whereNull('dependiente_id').first(),
     db('planes_salud').where({ cliente_id: clienteId, is_current: true }).first(),
     db('informacion_pago').where({ cliente_id: clienteId }).first(),
     db('evidencias').where({ cliente_id: clienteId }).count({ n: '*' }).first(),
+    // No se importa firmas.service.js acá para evitar un import circular
+    // (ese módulo ya importa getClienteDetalle de este) — se consulta la
+    // tabla directo.
+    db('firmas_documentos').where({ cliente_id: clienteId }).orderBy('created_at', 'desc').first(),
   ]);
 
   const faltantes = [];
@@ -281,6 +285,7 @@ export async function finalizar(clienteId, userId) {
   if (!plan) faltantes.push('Plan de salud (paso 5)');
   if (!pago) faltantes.push('Información de pago (paso 6)');
   if (!Number(evidenciasCount?.n || 0)) faltantes.push('Al menos 1 evidencia (paso 7)');
+  if (ultimaFirma?.estado !== 'signed') faltantes.push('Carta de firma (CMS) firmada por el cliente');
   if (faltantes.length) throw badRequest('Faltan pasos por completar antes de finalizar', faltantes);
 
   const nuevoEstado = 'pendiente_backoffice';
