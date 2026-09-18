@@ -17,11 +17,17 @@ export async function listarFirmas(clienteId) {
 function construirPayload(cliente, agente) {
   const nombreCompleto = `${cliente.nombres} ${cliente.apellidos}`;
   const plan = cliente.plan_salud;
+  // La carta debe mostrar como "agente" al PRODUCTOR dueño del NPN (Luis
+  // Vitier, Talia Bordon, etc — elegido en el Paso 5), no la cuenta del
+  // call-center que hizo la venta: el NPN es de esa persona, la carta
+  // tiene que calzar con quién es. Si todavía no se eligió productor, se
+  // cae al nombre real del agente (mejor eso que dejarlo vacío).
+  const nombreParaLaCarta = plan?.npn_productor_nombre || agente.name;
 
   // agentPhone/agentEmail: a pedido del usuario, no se incluyen en la carta.
   const vital = {
     clientName: nombreCompleto,
-    agentName: agente.name,
+    agentName: nombreParaLaCarta,
     householdContactName: nombreCompleto,
     householdContactPhone: cliente.phone_1,
     householdContactEmail: cliente.correo_electronico,
@@ -45,7 +51,7 @@ function construirPayload(cliente, agente) {
     clientName: nombreCompleto,
     clientEmail: cliente.correo_electronico,
     sendChannel: 'email', // whatsapp/both: bloqueado hasta que Meta apruebe (ver PDF).
-    agentName: agente.name,
+    agentName: nombreParaLaCarta,
     agentCedula: agente.cedula,
     ventaId: String(cliente.id),
     documentData: { vital },
