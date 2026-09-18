@@ -6,6 +6,12 @@ function applyFilters(q, filters = {}) {
   if (filters.from) q.where('c.created_at', '>=', filters.from);
   if (filters.to) q.where('c.created_at', '<=', `${filters.to} 23:59:59`);
   if (filters.agenteId) q.where('c.agente_id', filters.agenteId);
+  // Admin puede filtrar por empresa libremente (Vital / Vital Asiste); para
+  // supervisor esto viene forzado desde admin.routes.js a la suya propia —
+  // acá no hay diferencia entre ambos casos, solo se aplica el valor.
+  if (filters.empresaId) {
+    q.whereIn('c.agente_id', db('usuarios_sistema').select('id').where({ empresa_id: filters.empresaId }));
+  }
   return q;
 }
 

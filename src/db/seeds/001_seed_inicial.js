@@ -50,9 +50,18 @@ export async function seed(knex) {
     },
   ];
 
+  // Cuentas semilla del agente/backoffice de prueba son del lado "Vital"
+  // (el original, no el heredado de la extinta Asiste Health Care) — ver
+  // 000_empresas.js, que corre antes que este seed.
+  const vital = await knex('empresas').where({ nombre: 'Vital' }).first('id');
+
   for (const u of users) {
+    const empresaId = u.role === 'agente' || u.role === 'backoffice' ? (vital?.id ?? null) : null;
     const exists = await knex('usuarios_sistema').where({ email: u.email }).first('id');
-    if (exists) continue;
+    if (exists) {
+      if (empresaId) await knex('usuarios_sistema').where({ id: exists.id }).update({ empresa_id: empresaId });
+      continue;
+    }
     const password_hash = await bcrypt.hash(u.password, 10);
     await knex('usuarios_sistema').insert({
       name: u.name,
@@ -60,6 +69,7 @@ export async function seed(knex) {
       password_hash,
       role: u.role,
       avatar_color: u.avatar_color,
+      empresa_id: empresaId,
       is_active: true,
     });
     console.log(`Usuario creado: ${u.email} (${u.role}) — contraseña: ${u.password}`);

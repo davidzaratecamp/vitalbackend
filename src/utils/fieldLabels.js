@@ -77,4 +77,5 @@ export const FIELD_LABELS = {
   new_password: 'Nueva contraseña',
   cedula: 'Cédula',
   phone: 'Teléfono',
+  empresa_id: 'Empresa',
 };

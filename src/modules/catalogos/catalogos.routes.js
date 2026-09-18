@@ -9,6 +9,16 @@ import { notFound } from '../../utils/httpError.js';
 const router = Router();
 router.use(requireAuth);
 
+// Las dos empresas (Vital / Vital Asiste) — para el desplegable al crear/
+// editar un usuario. Sin POST/PATCH: son fijas, se siembran en el seed
+// 005_empresas.js.
+router.get(
+  '/empresas',
+  asyncHandler(async (_req, res) => {
+    res.json(await db('empresas').orderBy('nombre'));
+  })
+);
+
 // Cualquier usuario autenticado puede leer el catálogo (lo usa el Paso 5 del Agente).
 router.get(
   '/aseguradoras',

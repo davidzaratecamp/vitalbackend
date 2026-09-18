@@ -10,18 +10,28 @@ import { notFound, badRequest } from '../../utils/httpError.js';
 const router = Router();
 router.use(requireAuth);
 
-const COLS = ['id', 'name', 'email', 'role', 'avatar_color', 'is_active', 'cedula', 'phone', 'created_at'];
+const COLS = ['id', 'name', 'email', 'role', 'avatar_color', 'is_active', 'cedula', 'phone', 'empresa_id', 'created_at'];
 const AVATAR_COLORS = ['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#ef4444', '#14b8a6'];
 const randomColor = () => AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)];
+// Vital absorbió a la extinta Asiste Health Care ("Vital Asiste") pero
+// ambos lados quedan separados — solo admin no necesita empresa (ve las
+// dos sin restricción). Ver migración 20260919120000_empresas.
+const ROLES_CON_EMPRESA = ['agente', 'backoffice', 'supervisor'];
+
+function usuariosQuery() {
+  return db('usuarios_sistema as u')
+    .leftJoin('empresas as e', 'e.id', 'u.empresa_id')
+    .select(COLS.map((c) => `u.${c}`), 'e.nombre as empresa_nombre');
+}
 
 // Cualquier usuario autenticado puede listar personal (p. ej. para mostrar nombres),
 // pero crear/editar/desactivar es solo admin.
 router.get(
   '/',
   asyncHandler(async (req, res) => {
-    const q = db('usuarios_sistema').select(COLS).orderBy('name');
-    if (req.query.role) q.where('role', req.query.role);
-    if (req.query.active === 'true') q.where('is_active', true);
+    const q = usuariosQuery().orderBy('u.name');
+    if (req.query.role) q.where('u.role', req.query.role);
+    if (req.query.active === 'true') q.where('u.is_active', true);
     res.json(await q);
   })
 );
@@ -30,7 +40,7 @@ router.get(
   '/:id',
   requireRole('admin'),
   asyncHandler(async (req, res) => {
-    const user = await db('usuarios_sistema').select(COLS).where({ id: req.params.id }).first();
+    const user = await usuariosQuery().where({ 'u.id': req.params.id }).first();
     if (!user) throw notFound('Usuario no encontrado');
     res.json(user);
   })
@@ -46,6 +56,7 @@ const createSchema = z.object({
   // para no bloquear la creación de la cuenta si todavía no se tienen.
   cedula: z.string().max(40).optional().nullable(),
   phone: z.string().max(20).optional().nullable(),
+  empresa_id: z.coerce.number().int().positive().optional().nullable(),
 });
 
 router.post(
@@ -53,7 +64,10 @@ router.post(
   requireRole('admin'),
   validate(createSchema),
   asyncHandler(async (req, res) => {
-    const { name, email, password, role } = req.body;
+    const { name, email, password, role, empresa_id } = req.body;
+    if (ROLES_CON_EMPRESA.includes(role) && !empresa_id) {
+      throw badRequest('Este rol necesita una empresa asignada (Vital / Vital Asiste)', ['Empresa']);
+    }
     const exists = await db('usuarios_sistema').where({ email }).first('id');
     if (exists) throw badRequest('Ya existe un usuario con ese correo');
     const password_hash = await bcrypt.hash(password, 10);
@@ -64,9 +78,10 @@ router.post(
       role,
       cedula: req.body.cedula ?? null,
       phone: req.body.phone ?? null,
+      empresa_id: empresa_id ?? null,
       avatar_color: randomColor(),
     });
-    res.status(201).json(await db('usuarios_sistema').select(COLS).where({ id }).first());
+    res.status(201).json(await usuariosQuery().where({ 'u.id': id }).first());
   })
 );
 
@@ -78,6 +93,7 @@ const updateSchema = z.object({
   password: z.string().min(8).optional(),
   cedula: z.string().max(40).optional().nullable(),
   phone: z.string().max(20).optional().nullable(),
+  empresa_id: z.coerce.number().int().positive().optional().nullable(),
 });
 
 router.patch(
@@ -89,7 +105,7 @@ router.patch(
     if (!user) throw notFound('Usuario no encontrado');
 
     const patch = { updated_at: db.fn.now() };
-    const { name, email, role, is_active, password, cedula, phone } = req.body;
+    const { name, email, role, is_active, password, cedula, phone, empresa_id } = req.body;
     if (name !== undefined) patch.name = name;
     if (email !== undefined) patch.email = email;
     if (role !== undefined) patch.role = role;
@@ -97,9 +113,16 @@ router.patch(
     if (password) patch.password_hash = await bcrypt.hash(password, 10);
     if (cedula !== undefined) patch.cedula = cedula;
     if (phone !== undefined) patch.phone = phone;
+    if (empresa_id !== undefined) patch.empresa_id = empresa_id;
+
+    const rolFinal = role ?? user.role;
+    const empresaFinal = empresa_id !== undefined ? empresa_id : user.empresa_id;
+    if (ROLES_CON_EMPRESA.includes(rolFinal) && !empresaFinal) {
+      throw badRequest('Este rol necesita una empresa asignada (Vital / Vital Asiste)', ['Empresa']);
+    }
 
     await db('usuarios_sistema').where({ id: user.id }).update(patch);
-    res.json(await db('usuarios_sistema').select(COLS).where({ id: user.id }).first());
+    res.json(await usuariosQuery().where({ 'u.id': user.id }).first());
   })
 );
 

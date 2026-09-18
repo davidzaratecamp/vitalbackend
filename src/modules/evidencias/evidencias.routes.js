@@ -8,7 +8,7 @@ import { env } from '../../config/env.js';
 import { asyncHandler } from '../../utils/asyncHandler.js';
 import { requireAuth } from '../../middleware/auth.js';
 import { badRequest, notFound, forbidden } from '../../utils/httpError.js';
-import { getClienteOr404, assertOwnerIfAgente, assertEditable } from '../clientes/clientes.service.js';
+import { getClienteOr404, assertAccesoCliente, assertEditable } from '../clientes/clientes.service.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -40,7 +40,7 @@ const upload = multer({
 
 async function assertAccess(req, clienteId) {
   const cliente = await getClienteOr404(clienteId);
-  assertOwnerIfAgente(cliente, req.user);
+  await assertAccesoCliente(cliente, req.user);
   return cliente;
 }
 

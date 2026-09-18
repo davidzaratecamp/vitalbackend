@@ -2,17 +2,17 @@ import { Router } from 'express';
 import { asyncHandler } from '../../utils/asyncHandler.js';
 import { requireAuth } from '../../middleware/auth.js';
 import { forbidden } from '../../utils/httpError.js';
-import { getClienteOr404, assertOwnerIfAgente } from '../clientes/clientes.service.js';
+import { getClienteOr404, assertAccesoCliente } from '../clientes/clientes.service.js';
 import * as svc from './firmas.service.js';
 
 const router = Router();
 router.use(requireAuth);
 
 // Mismo acceso que el resto del expediente del cliente: el agente solo el
-// suyo, backoffice/admin cualquiera.
+// suyo, backoffice/supervisor solo de su empresa, admin cualquiera.
 async function assertAccess(req) {
   const cliente = await getClienteOr404(req.params.clienteId);
-  assertOwnerIfAgente(cliente, req.user);
+  await assertAccesoCliente(cliente, req.user);
   return cliente;
 }
 

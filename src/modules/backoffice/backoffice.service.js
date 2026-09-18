@@ -1,11 +1,25 @@
 import { db } from '../../db/knex.js';
-import { badRequest, conflict } from '../../utils/httpError.js';
+import { badRequest, conflict, forbidden } from '../../utils/httpError.js';
 import { getClienteOr404, logEstado, setPlanSalud, getPlanSaludActual } from '../clientes/clientes.service.js';
 import { notificar } from '../notificaciones/notificaciones.service.js';
 
 const PENDIENTE = 'pendiente_backoffice';
 
-export async function listarCola(filters = {}) {
+/**
+ * Un backoffice solo ve/gestiona clientes de agentes de SU MISMA empresa
+ * (Vital absorbió a la extinta Asiste Health Care — "Vital Asiste" — pero
+ * ambos lados quedan separados entre sí; ver migración 20260919120000). Se
+ * usa tanto para la cola (listarCola) como para completar/rechazar, así un
+ * backoffice no puede gestionar por API directa un cliente que no vería en
+ * su propia cola.
+ */
+async function assertMismaEmpresa(cliente, empresaId) {
+  if (!empresaId) throw forbidden('Tu cuenta no tiene una empresa asignada — pídele a un admin que la configure');
+  const agente = await db('usuarios_sistema').where({ id: cliente.agente_id }).first('empresa_id');
+  if (!agente || agente.empresa_id !== empresaId) throw forbidden('Este cliente pertenece a otra empresa');
+}
+
+export async function listarCola(filters = {}, empresaId) {
   const estado = filters.estado || PENDIENTE;
   // Mismo campo que ya se muestra en cada vista: cuándo entró a la cola
   // (pendiente) o cuándo se resolvió (completados/rechazados) — el rango de
@@ -31,6 +45,7 @@ export async function listarCola(filters = {}) {
     .orderBy(campoFecha, estado === PENDIENTE ? 'asc' : 'desc')
     .limit(200);
 
+  if (empresaId) q.andWhere('ag.empresa_id', empresaId);
   if (filters.agenteId) q.andWhere('c.agente_id', filters.agenteId);
   if (filters.desde) q.andWhere(campoFecha, '>=', filters.desde);
   if (filters.hasta) q.andWhere(campoFecha, '<=', `${filters.hasta} 23:59:59`);
@@ -55,8 +70,9 @@ export async function listarCola(filters = {}) {
  * original, que los guardaba sueltos en `usuarios` y permitía "Completar" sin que
  * ninguno estuviera lleno. Acá se valida el server-side antes de aprobar.
  */
-export async function completar(clienteId, userId, data) {
+export async function completar(clienteId, userId, data, empresaId) {
   const cliente = await getClienteOr404(clienteId);
+  await assertMismaEmpresa(cliente, empresaId);
   if (cliente.estado !== PENDIENTE) throw conflict('Este cliente no está pendiente de BackOffice');
 
   const planActual = await getPlanSaludActual(clienteId);
@@ -100,8 +116,9 @@ export async function completar(clienteId, userId, data) {
   return getClienteOr404(clienteId);
 }
 
-export async function rechazar(clienteId, userId, motivo) {
+export async function rechazar(clienteId, userId, motivo, empresaId) {
   const cliente = await getClienteOr404(clienteId);
+  await assertMismaEmpresa(cliente, empresaId);
   if (cliente.estado !== PENDIENTE) throw conflict('Este cliente no está pendiente de BackOffice');
   await db('clientes').where({ id: clienteId }).update({ estado: 'rechazado_backoffice', updated_at: db.fn.now() });
   await logEstado(clienteId, cliente.estado, 'rechazado_backoffice', userId, motivo);

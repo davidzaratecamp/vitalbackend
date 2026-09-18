@@ -6,10 +6,25 @@ import { encryptCard, decryptCard, detectarMarca } from '../../utils/cardCrypto.
 
 const EDITABLE_STATES = ['borrador', 'rechazado_backoffice'];
 
-export function assertOwnerIfAgente(cliente, user) {
-  if (user.role === 'agente' && cliente.agente_id !== user.id) {
-    throw forbidden('Este cliente no te pertenece');
+/**
+ * Acceso general a un cliente, según rol:
+ * - agente: solo el suyo (igual que antes).
+ * - backoffice / supervisor: solo clientes de agentes de SU MISMA empresa
+ *   (Vital absorbió a la extinta Asiste Health Care — "Vital Asiste" — pero
+ *   ambos lados quedan separados entre sí; ver migración 20260919120000).
+ * - admin: sin restricción, ve las dos empresas.
+ */
+export async function assertAccesoCliente(cliente, user) {
+  if (user.role === 'agente') {
+    if (cliente.agente_id !== user.id) throw forbidden('Este cliente no te pertenece');
+    return;
   }
+  if (user.role === 'backoffice' || user.role === 'supervisor') {
+    if (!user.empresa_id) throw forbidden('Tu cuenta no tiene una empresa asignada — pídele a un admin que la configure');
+    const agente = await db('usuarios_sistema').where({ id: cliente.agente_id }).first('empresa_id');
+    if (!agente || agente.empresa_id !== user.empresa_id) throw forbidden('Este cliente pertenece a otra empresa');
+  }
+  // admin: sin restricción.
 }
 
 export async function getClienteOr404(id) {
@@ -390,6 +405,9 @@ export async function listarClientes(user, filters = {}) {
     .limit(200);
 
   if (user.role === 'agente') q.where('c.agente_id', user.id);
+  if (user.role === 'backoffice' || user.role === 'supervisor') {
+    q.whereIn('c.agente_id', db('usuarios_sistema').select('id').where({ empresa_id: user.empresa_id }));
+  }
   if (filters.estado) q.where('c.estado', filters.estado);
   if (filters.agenteId) q.where('c.agente_id', filters.agenteId);
   if (filters.q) {

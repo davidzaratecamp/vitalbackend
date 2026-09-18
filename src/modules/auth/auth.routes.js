@@ -29,6 +29,7 @@ const publicUser = (u) => ({
   email: u.email,
   role: u.role,
   avatar_color: u.avatar_color,
+  empresa_id: u.empresa_id ?? null,
 });
 
 router.post(

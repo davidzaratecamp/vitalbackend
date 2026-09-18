@@ -27,7 +27,7 @@ const fecha = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválid
 
 async function loadCliente(req, _res, next) {
   const cliente = await svc.getClienteOr404(req.params.id);
-  svc.assertOwnerIfAgente(cliente, req.user);
+  await svc.assertAccesoCliente(cliente, req.user);
   req.cliente = cliente;
   next();
 }
@@ -353,7 +353,7 @@ router.post(
   loadCliente,
   requireRole('agente'),
   asyncHandler(async (req, res) => {
-    svc.assertOwnerIfAgente(req.cliente, req.user);
+    await svc.assertAccesoCliente(req.cliente, req.user);
     res.json(await svc.finalizar(req.params.id, req.user.id));
   })
 );

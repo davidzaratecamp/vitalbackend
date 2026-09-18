@@ -4,7 +4,7 @@ import { db } from '../../db/knex.js';
 import { asyncHandler } from '../../utils/asyncHandler.js';
 import { validate } from '../../middleware/validate.js';
 import { requireAuth, requireRole } from '../../middleware/auth.js';
-import { agregarObservacion } from '../clientes/clientes.service.js';
+import { getClienteOr404, assertAccesoCliente, agregarObservacion } from '../clientes/clientes.service.js';
 import { ESTADO_PRIMA } from '../clientes/clientes.constants.js';
 import * as svc from './backoffice.service.js';
 
@@ -15,13 +15,16 @@ router.get(
   '/clientes',
   asyncHandler(async (req, res) => {
     res.json(
-      await svc.listarCola({
-        estado: req.query.estado,
-        q: req.query.q,
-        agenteId: req.query.agenteId,
-        desde: req.query.desde,
-        hasta: req.query.hasta,
-      })
+      await svc.listarCola(
+        {
+          estado: req.query.estado,
+          q: req.query.q,
+          agenteId: req.query.agenteId,
+          desde: req.query.desde,
+          hasta: req.query.hasta,
+        },
+        req.user.empresa_id
+      )
     );
   })
 );
@@ -39,7 +42,7 @@ router.put(
   '/clientes/:id/completar',
   validate(completarSchema),
   asyncHandler(async (req, res) => {
-    res.json(await svc.completar(req.params.id, req.user.id, req.body));
+    res.json(await svc.completar(req.params.id, req.user.id, req.body, req.user.empresa_id));
   })
 );
 
@@ -49,7 +52,7 @@ router.put(
   '/clientes/:id/rechazar',
   validate(rechazarSchema),
   asyncHandler(async (req, res) => {
-    res.json(await svc.rechazar(req.params.id, req.user.id, req.body.motivo));
+    res.json(await svc.rechazar(req.params.id, req.user.id, req.body.motivo, req.user.empresa_id));
   })
 );
 
@@ -59,6 +62,8 @@ router.post(
   '/clientes/:id/observacion',
   validate(observacionSchema),
   asyncHandler(async (req, res) => {
+    const cliente = await getClienteOr404(req.params.id);
+    await assertAccesoCliente(cliente, req.user);
     res.status(201).json(await agregarObservacion(req.params.id, req.user.id, req.body.comentario));
   })
 );
@@ -66,6 +71,8 @@ router.post(
 router.get(
   '/clientes/:id/historial',
   asyncHandler(async (req, res) => {
+    const cliente = await getClienteOr404(req.params.id);
+    await assertAccesoCliente(cliente, req.user);
     const rows = await db('historial_estados_cliente as h')
       .leftJoin('usuarios_sistema as u', 'u.id', 'h.cambiado_por')
       .select('h.*', 'u.name as cambiado_por_nombre')
