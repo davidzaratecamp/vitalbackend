@@ -32,8 +32,12 @@ router.post(
   '/cliente/:clienteId/enviar',
   validate(enviarSchema),
   asyncHandler(async (req, res) => {
-    // El supervisor es solo-lectura — ve el estado de la carta, no la envía.
-    if (req.user.role === 'supervisor') throw forbidden('Los supervisores no pueden enviar la carta de firma');
+    // Solo el agente (dueño del caso) y admin envían la carta — supervisor
+    // es solo-lectura total, y backoffice solo revisa/aprueba, no le
+    // corresponde reenviarle nada al cliente.
+    if (req.user.role !== 'agente' && req.user.role !== 'admin') {
+      throw forbidden('Solo el agente puede enviar la carta de firma');
+    }
     await assertAccess(req);
     res.status(201).json(await svc.enviarFirma(req.params.clienteId, req.user.id, req.body.canal));
   })
