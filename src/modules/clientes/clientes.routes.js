@@ -338,14 +338,13 @@ router.get(
   })
 );
 
-// "Data Point" — solo Admin (BackOffice ya no, a pedido del usuario). El
-// agente nunca lo vuelve a ver, ni siquiera él mismo (a diferencia de la
-// tarjeta, no queda auditado: no es un dato de pago regulado, solo se pidió
-// ocultarlo del agente).
+// "Data Point" — deshabilitado para TODOS los roles por el momento, a
+// pedido del usuario (2026-09-21). requireRole() sin argumentos nunca deja
+// pasar a nadie (ni siquiera admin). Para reactivarlo: requireRole('admin').
 router.get(
   '/:id/pago/data-point',
   loadCliente,
-  requireRole('admin'),
+  requireRole(),
   asyncHandler(async (req, res) => {
     res.json(await svc.getDataPointCompleto(req.params.id));
   })
