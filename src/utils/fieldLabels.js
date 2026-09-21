@@ -68,7 +68,7 @@ export const FIELD_LABELS = {
 
   // Catálogo de aseguradoras / usuarios del sistema / auth
   nombre: 'Nombre',
-  email: 'Correo electrónico',
+  email: 'Usuario', // login de usuarios_sistema — puede ser cédula o correo, ya no se exige formato de correo
   password: 'Contraseña',
   role: 'Rol',
   is_active: 'Estado activo',

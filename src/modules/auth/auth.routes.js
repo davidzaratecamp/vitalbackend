@@ -18,8 +18,10 @@ const loginLimiter = rateLimit({
   message: { error: 'Demasiados intentos de inicio de sesión. Espera unos minutos.' },
 });
 
+// Muchos usuarios reales entran con su cédula, no con un correo — ya no se
+// exige formato de correo acá (ver identificadorAcceso en usuariosSistema.routes.js).
 const loginSchema = z.object({
-  email: z.string().email(),
+  email: z.string().trim().min(1),
   password: z.string().min(1),
 });
 

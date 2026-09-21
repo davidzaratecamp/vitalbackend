@@ -46,9 +46,15 @@ router.get(
   })
 );
 
+// Identificador de acceso — antes exigía formato de correo, pero muchos
+// usuarios reales entran con su cédula, no un correo (siguen llamándose
+// "email"/columna `email` internamente, no vale la pena una migración solo
+// por el nombre). Solo se exige que no tenga espacios ni quede vacío.
+const identificadorAcceso = z.string().trim().min(3).max(190).regex(/^\S+$/, 'No puede tener espacios');
+
 const createSchema = z.object({
   name: z.string().min(2).max(120),
-  email: z.string().email().max(190),
+  email: identificadorAcceso,
   password: z.string().min(8),
   role: z.enum(['agente', 'backoffice', 'admin', 'supervisor']),
   // Los pide la carta de firma (FirmaCloud): agentCedula es obligatorio al
@@ -69,7 +75,7 @@ router.post(
       throw badRequest('Este rol necesita una empresa asignada (Vital / Vital Asiste)', ['Empresa']);
     }
     const exists = await db('usuarios_sistema').where({ email }).first('id');
-    if (exists) throw badRequest('Ya existe un usuario con ese correo');
+    if (exists) throw badRequest('Ya existe un usuario con ese usuario/correo');
     const password_hash = await bcrypt.hash(password, 10);
     const [id] = await db('usuarios_sistema').insert({
       name,
@@ -87,7 +93,7 @@ router.post(
 
 const updateSchema = z.object({
   name: z.string().min(2).max(120).optional(),
-  email: z.string().email().max(190).optional(),
+  email: identificadorAcceso.optional(),
   role: z.enum(['agente', 'backoffice', 'admin', 'supervisor']).optional(),
   is_active: z.coerce.boolean().optional(),
   password: z.string().min(8).optional(),
