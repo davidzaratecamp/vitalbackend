@@ -246,7 +246,11 @@ const planSaludSchema = z.object({
   tipo_red: z.enum(TIPO_RED),
   deducible: z.coerce.number().min(0).optional().nullable(),
   gasto_max_bolsillo: z.coerce.number().min(0).optional().nullable(),
-  valor_prima: z.coerce.number().positive(),
+  // .min(0), no .positive() — hay planes con prima real en $0 (totalmente
+  // subsidiados) y antes quedaban bloqueados, obligando al agente a
+  // inventar un valor solo para poder guardar, lo que dejaba la carta con
+  // la prima equivocada.
+  valor_prima: z.coerce.number().min(0),
   npn: z.string().max(40).optional().nullable(),
   estado_prima: z.enum(ESTADO_PRIMA).optional().nullable(),
   // Para la carta de firma (FirmaCloud) — se manda tal cual, sin el signo $.
