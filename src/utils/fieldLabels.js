@@ -61,6 +61,7 @@ export const FIELD_LABELS = {
   fecha_expiracion_mes: 'Mes de vencimiento',
   fecha_expiracion_ano: 'Año de vencimiento',
   data_point: 'Data Point',
+  canal: 'Canal de envío',
 
   // Observaciones / BackOffice
   comentario: 'Comentario',

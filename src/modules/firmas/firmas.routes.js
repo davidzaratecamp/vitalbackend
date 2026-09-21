@@ -1,5 +1,7 @@
 import { Router } from 'express';
+import { z } from 'zod';
 import { asyncHandler } from '../../utils/asyncHandler.js';
+import { validate } from '../../middleware/validate.js';
 import { requireAuth } from '../../middleware/auth.js';
 import { forbidden } from '../../utils/httpError.js';
 import { getClienteOr404, assertAccesoCliente } from '../clientes/clientes.service.js';
@@ -24,13 +26,16 @@ router.get(
   })
 );
 
+const enviarSchema = z.object({ canal: z.enum(['email', 'sms']).optional().default('email') });
+
 router.post(
   '/cliente/:clienteId/enviar',
+  validate(enviarSchema),
   asyncHandler(async (req, res) => {
     // El supervisor es solo-lectura — ve el estado de la carta, no la envía.
     if (req.user.role === 'supervisor') throw forbidden('Los supervisores no pueden enviar la carta de firma');
     await assertAccess(req);
-    res.status(201).json(await svc.enviarFirma(req.params.clienteId, req.user.id));
+    res.status(201).json(await svc.enviarFirma(req.params.clienteId, req.user.id, req.body.canal));
   })
 );
 

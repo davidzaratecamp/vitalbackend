@@ -14,7 +14,21 @@ export async function listarFirmas(clienteId) {
     .orderBy('firmas_documentos.created_at', 'desc');
 }
 
-function construirPayload(cliente, agente) {
+/**
+ * FirmaCloud manda el SMS solo a números de EE. UU. — necesita el formato
+ * E.164 (+1XXXXXXXXXX). `phone_1` se guarda como el agente lo tecleó (solo
+ * dígitos, sin +1), así que se normaliza acá. Si no tiene pinta de número
+ * de EE. UU. de 10 dígitos, se corta antes de llamar a FirmaCloud — un
+ * número mal formado ahí da un error mucho menos claro.
+ */
+function formatearTelefonoUS(telefono) {
+  const digitos = String(telefono || '').replace(/\D/g, '');
+  if (digitos.length === 10) return `+1${digitos}`;
+  if (digitos.length === 11 && digitos.startsWith('1')) return `+${digitos}`;
+  return null;
+}
+
+function construirPayload(cliente, agente, canal) {
   const nombreCompleto = `${cliente.nombres} ${cliente.apellidos}`;
   const plan = cliente.plan_salud;
   // La carta debe mostrar como "agente" al PRODUCTOR dueño del NPN (Luis
@@ -47,25 +61,35 @@ function construirPayload(cliente, agente) {
     if (plan.sd) vital.sd = plan.sd;
   }
 
-  return {
+  const payload = {
     clientName: nombreCompleto,
-    clientEmail: cliente.correo_electronico,
-    sendChannel: 'email', // whatsapp/both: bloqueado hasta que Meta apruebe (ver PDF).
+    sendChannel: canal, // 'email' | 'sms' — whatsapp/both siguen bloqueados hasta que Meta apruebe (ver PDF).
     agentName: nombreParaLaCarta,
     agentCedula: agente.cedula,
     ventaId: String(cliente.id),
     documentData: { vital },
   };
+  if (canal === 'sms') {
+    payload.clientPhone = formatearTelefonoUS(cliente.phone_1);
+  } else {
+    payload.clientEmail = cliente.correo_electronico;
+  }
+  return payload;
 }
 
 function mapearErrorFirmaCloud(err) {
   if (!(err instanceof FirmaCloudError)) throw err;
   if (err.status === 503) {
-    const codigo = err.body?.error;
+    // FirmaCloud manda el código en `errorCode`, no en `error` (ese trae el
+    // mensaje legible) — se revisan los dos por si acaso.
+    const codigo = err.body?.errorCode || err.body?.error;
     if (codigo === 'WHATSAPP_UNAVAILABLE') {
-      return badRequest('WhatsApp todavía no está disponible para Vital — usa el canal de correo.');
+      return badRequest('WhatsApp todavía no está disponible para Vital — usa el canal de correo o SMS.');
     }
-    return badRequest('FirmaCloud no pudo enviar el correo en este momento — se puede reintentar.');
+    if (codigo === 'SMS_UNAVAILABLE') {
+      return badRequest('SMS no está disponible en este momento — usa el canal de correo o inténtalo de nuevo más tarde.');
+    }
+    return badRequest('FirmaCloud no pudo enviar el documento por este canal en este momento — se puede reintentar.');
   }
   if (err.status === 401) {
     return badRequest('La API key de FirmaCloud no es válida — revisa la configuración del servidor.');
@@ -76,12 +100,20 @@ function mapearErrorFirmaCloud(err) {
   return badRequest('No se pudo conectar con FirmaCloud — inténtalo de nuevo en un momento.');
 }
 
-/** Envía la Carta CMS Vital por correo. Guarda un registro nuevo por cada
- * intento (permite reenviar si expiró o hubo un error). */
-export async function enviarFirma(clienteId, userId) {
+/** Envía la Carta CMS Vital por correo o SMS (el agente elige). Guarda un
+ * registro nuevo por cada intento (permite reenviar si expiró o hubo un
+ * error, incluso por el otro canal). */
+export async function enviarFirma(clienteId, userId, canal = 'email') {
+  if (canal !== 'email' && canal !== 'sms') throw badRequest('Canal de envío inválido');
+
   const cliente = await getClienteDetalle(clienteId);
-  if (!cliente.correo_electronico) {
-    throw badRequest('El cliente no tiene correo electrónico registrado — hace falta para enviar la carta.');
+
+  if (canal === 'email') {
+    if (!cliente.correo_electronico) {
+      throw badRequest('El cliente no tiene correo electrónico registrado — hace falta para enviar la carta.');
+    }
+  } else if (!formatearTelefonoUS(cliente.phone_1)) {
+    throw badRequest('El teléfono del cliente no es un número de EE. UU. válido para enviar por SMS (10 dígitos).');
   }
 
   const agente = await db('usuarios_sistema').where({ id: cliente.agente_id }).first();
@@ -92,7 +124,7 @@ export async function enviarFirma(clienteId, userId) {
     ]);
   }
 
-  const payload = construirPayload(cliente, agente);
+  const payload = construirPayload(cliente, agente, canal);
 
   let respuesta;
   try {
@@ -105,7 +137,7 @@ export async function enviarFirma(clienteId, userId) {
     cliente_id: clienteId,
     firmacloud_id: respuesta.id,
     estado: respuesta.status || 'pending',
-    canal: 'email',
+    canal,
     enviado_por: userId,
     enviado_at: db.fn.now(),
   });
