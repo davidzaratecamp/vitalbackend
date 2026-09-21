@@ -338,13 +338,14 @@ router.get(
   })
 );
 
-// "Data Point" — solo BackOffice/Admin. El agente nunca lo vuelve a ver,
-// ni siquiera él mismo (a diferencia de la tarjeta, no queda auditado:
-// no es un dato de pago regulado, solo se pidió ocultarlo del agente).
+// "Data Point" — solo Admin (BackOffice ya no, a pedido del usuario). El
+// agente nunca lo vuelve a ver, ni siquiera él mismo (a diferencia de la
+// tarjeta, no queda auditado: no es un dato de pago regulado, solo se pidió
+// ocultarlo del agente).
 router.get(
   '/:id/pago/data-point',
   loadCliente,
-  requireRole('backoffice', 'admin'),
+  requireRole('admin'),
   asyncHandler(async (req, res) => {
     res.json(await svc.getDataPointCompleto(req.params.id));
   })
