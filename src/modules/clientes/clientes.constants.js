@@ -39,6 +39,20 @@ export const ESTADO_PRIMA = [
 export const METODO_PAGO = ['tarjeta', 'debito_automatico', 'otro'];
 export const MARCA_TARJETA = ['Visa', 'Mastercard', 'Otra'];
 
+// Categorías del Paso 7 (evidencias) — cada una es su propio "casillero" en
+// vez de una lista plana de archivos sin etiquetar, así el agente sabe
+// exactamente qué falta subir. poliza/estatus_migratorio/licencia son
+// obligatorias para poder finalizar (ver finalizar() en clientes.service.js);
+// social es la única opcional.
+export const CATEGORIA_EVIDENCIA = ['poliza', 'estatus_migratorio', 'licencia', 'social'];
+export const CATEGORIA_EVIDENCIA_LABEL = {
+  poliza: 'Póliza',
+  estatus_migratorio: 'Estatus migratorio',
+  licencia: 'Licencia',
+  social: 'Social',
+};
+export const CATEGORIA_EVIDENCIA_OBLIGATORIA = ['poliza', 'estatus_migratorio', 'licencia'];
+
 export const ESTADO_CLIENTE = ['borrador', 'pendiente_backoffice', 'aprobado', 'rechazado_backoffice'];
 export const ESTADO_CLIENTE_LABEL = {
   borrador: 'Borrador',

@@ -3,6 +3,7 @@ import { db } from '../../db/knex.js';
 import { notFound, forbidden, conflict, badRequest } from '../../utils/httpError.js';
 import { notificarRol } from '../notificaciones/notificaciones.service.js';
 import { encryptCard, decryptCard, detectarMarca } from '../../utils/cardCrypto.js';
+import { CATEGORIA_EVIDENCIA_OBLIGATORIA, CATEGORIA_EVIDENCIA_LABEL } from './clientes.constants.js';
 
 const EDITABLE_STATES = ['borrador', 'rechazado_backoffice'];
 
@@ -310,11 +311,11 @@ export async function finalizar(clienteId, userId) {
   const cliente = await getClienteOr404(clienteId);
   assertEditable(cliente);
 
-  const [ingresoTitular, plan, pago, evidenciasCount, ultimaFirma] = await Promise.all([
+  const [ingresoTitular, plan, pago, categoriasSubidas, ultimaFirma] = await Promise.all([
     db('ingresos').where({ cliente_id: clienteId }).whereNull('dependiente_id').first(),
     db('planes_salud').where({ cliente_id: clienteId, is_current: true }).first(),
     db('informacion_pago').where({ cliente_id: clienteId }).first(),
-    db('evidencias').where({ cliente_id: clienteId }).count({ n: '*' }).first(),
+    db('evidencias').where({ cliente_id: clienteId }).whereNotNull('categoria').distinct('categoria'),
     // No se importa firmas.service.js acá para evitar un import circular
     // (ese módulo ya importa getClienteDetalle de este) — se consulta la
     // tabla directo.
@@ -325,7 +326,10 @@ export async function finalizar(clienteId, userId) {
   if (!ingresoTitular) faltantes.push('Ingresos del titular (paso 4)');
   if (!plan) faltantes.push('Plan de salud (paso 5)');
   if (!pago) faltantes.push('Información de pago (paso 6)');
-  if (!Number(evidenciasCount?.n || 0)) faltantes.push('Al menos 1 evidencia (paso 7)');
+  const categoriasPresentes = new Set(categoriasSubidas.map((r) => r.categoria));
+  for (const cat of CATEGORIA_EVIDENCIA_OBLIGATORIA) {
+    if (!categoriasPresentes.has(cat)) faltantes.push(`Evidencia: ${CATEGORIA_EVIDENCIA_LABEL[cat]} (paso 7)`);
+  }
   if (ultimaFirma?.estado !== 'signed') faltantes.push('Carta de firma (CMS) firmada por el cliente');
   if (faltantes.length) throw badRequest('Faltan pasos por completar antes de finalizar', faltantes);
 

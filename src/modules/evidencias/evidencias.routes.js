@@ -9,6 +9,7 @@ import { asyncHandler } from '../../utils/asyncHandler.js';
 import { requireAuth } from '../../middleware/auth.js';
 import { badRequest, notFound, forbidden } from '../../utils/httpError.js';
 import { getClienteOr404, assertAccesoCliente, assertEditable } from '../clientes/clientes.service.js';
+import { CATEGORIA_EVIDENCIA } from '../clientes/clientes.constants.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -65,6 +66,15 @@ router.post(
     const files = req.files || [];
     if (!files.length) throw badRequest('No se recibió ningún archivo');
 
+    // Cada subida va a una sola categoría (Póliza/Estatus migratorio/
+    // Licencia/Social) — el frontend manda un uploader por casillero, así
+    // que "categoria" siempre viene en el body, nunca por archivo.
+    const categoria = req.body.categoria;
+    if (!CATEGORIA_EVIDENCIA.includes(categoria)) {
+      for (const f of files) fs.unlink(f.path, () => {});
+      throw badRequest('Selecciona una categoría válida para el archivo', ['categoria']);
+    }
+
     const [{ n: existentes }] = await db('evidencias').where({ cliente_id: req.params.clienteId }).count({ n: '*' });
     if (Number(existentes) + files.length > env.uploads.maxFiles) {
       for (const f of files) fs.unlink(f.path, () => {});
@@ -76,6 +86,7 @@ router.post(
       nombre_archivo: f.originalname,
       ruta_archivo: path.relative(env.uploads.dir, f.path),
       tipo_archivo: f.mimetype,
+      categoria,
       tamano_bytes: f.size,
       descripcion: req.body.descripcion || null,
       subido_por: req.user.id,
