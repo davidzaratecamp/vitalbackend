@@ -325,7 +325,12 @@ export async function finalizar(clienteId, userId) {
   const faltantes = [];
   if (!ingresoTitular) faltantes.push('Ingresos del titular (paso 4)');
   if (!plan) faltantes.push('Plan de salud (paso 5)');
-  if (!pago) faltantes.push('Información de pago (paso 6)');
+  // Con prima $0 (plan totalmente subsidiado) no hay cobro que gestionar,
+  // así que el Paso 6 deja de ser obligatorio (2026-09-22). Si no hay plan
+  // todavía, no se puede confirmar que la prima sea $0 — se exige el pago
+  // igual que siempre en ese caso.
+  const primaEsCero = plan && Number(plan.valor_prima) === 0;
+  if (!pago && !primaEsCero) faltantes.push('Información de pago (paso 6)');
   const categoriasPresentes = new Set(categoriasSubidas.map((r) => r.categoria));
   for (const cat of CATEGORIA_EVIDENCIA_OBLIGATORIA) {
     if (!categoriasPresentes.has(cat)) faltantes.push(`Evidencia: ${CATEGORIA_EVIDENCIA_LABEL[cat]} (paso 7)`);
