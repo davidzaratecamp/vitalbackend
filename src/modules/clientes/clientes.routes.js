@@ -205,7 +205,11 @@ router.delete(
 const ingresoSchema = z.object({
   tiene_ingresos: z.coerce.boolean().optional().default(true),
   tipo_declaracion: z.enum(TIPO_DECLARACION).optional().default('W2'),
-  ingresos_semanales: z.coerce.number().min(0).optional().default(0),
+  // El agente ya no calcula el anual a partir de 52 semanas — lo digita
+  // directo (2026-09-22). ingresos_semanales queda opcional (ya no se
+  // pide en el formulario) para no romper nada que todavía lo mande.
+  ingresos_anuales: z.coerce.number().min(0),
+  ingresos_semanales: z.coerce.number().min(0).optional().nullable(),
 });
 
 router.get(

@@ -153,7 +153,8 @@ export async function setIngresoTitular(clienteId, data) {
     cliente_id: clienteId,
     dependiente_id: null,
     tipo_declaracion: data.tipo_declaracion,
-    ingresos_semanales: data.ingresos_semanales,
+    ingresos_anuales: data.ingresos_anuales,
+    ingresos_semanales: data.ingresos_semanales ?? null,
   };
   if (existing) {
     await db('ingresos').where({ id: existing.id }).update({ ...payload, updated_at: db.fn.now() });
@@ -175,7 +176,8 @@ export async function setIngresoDependiente(clienteId, depId, data) {
     cliente_id: clienteId,
     dependiente_id: depId,
     tipo_declaracion: data.tipo_declaracion,
-    ingresos_semanales: data.ingresos_semanales,
+    ingresos_anuales: data.ingresos_anuales,
+    ingresos_semanales: data.ingresos_semanales ?? null,
   };
   if (existing) {
     await db('ingresos').where({ id: existing.id }).update({ ...payload, updated_at: db.fn.now() });
