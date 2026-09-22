@@ -10,6 +10,8 @@ import { requireAuth } from '../../middleware/auth.js';
 import { badRequest, notFound, forbidden } from '../../utils/httpError.js';
 import { getClienteOr404, assertAccesoCliente } from '../clientes/clientes.service.js';
 
+const TIPOS_SOPORTE = ['poliza', 'rechazo'];
+
 const router = Router();
 router.use(requireAuth);
 
@@ -71,6 +73,11 @@ router.post(
     const files = req.files || [];
     if (!files.length) throw badRequest('No se recibió ningún archivo');
 
+    // 'poliza' (lo de siempre) o 'rechazo' (imagen de soporte al rechazar
+    // una venta, 2026-09-22) — mismo endpoint, misma tabla, se distingue
+    // por este campo.
+    const tipo = TIPOS_SOPORTE.includes(req.body.tipo) ? req.body.tipo : 'poliza';
+
     const [{ n: existentes }] = await db('soportes_poliza').where({ cliente_id: req.params.clienteId }).count({ n: '*' });
     if (Number(existentes) + files.length > env.uploads.maxFiles) {
       for (const f of files) fs.unlink(f.path, () => {});
@@ -79,6 +86,7 @@ router.post(
 
     const rows = files.map((f) => ({
       cliente_id: req.params.clienteId,
+      tipo,
       nombre_archivo: f.originalname,
       ruta_archivo: path.relative(env.uploads.dir, f.path),
       tipo_archivo: f.mimetype,
