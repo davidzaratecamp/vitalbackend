@@ -20,6 +20,7 @@ import agenteRoutes from './modules/agente/agente.routes.js';
 import adminRoutes from './modules/admin/admin.routes.js';
 import catalogosRoutes from './modules/catalogos/catalogos.routes.js';
 import evidenciasRoutes from './modules/evidencias/evidencias.routes.js';
+import soportesPolizaRoutes from './modules/soportesPoliza/soportesPoliza.routes.js';
 import notificacionesRoutes from './modules/notificaciones/notificaciones.routes.js';
 import firmasRoutes from './modules/firmas/firmas.routes.js';
 
@@ -42,6 +43,7 @@ export function createApp() {
   app.use('/api/admin', adminRoutes);
   app.use('/api/catalogos', catalogosRoutes);
   app.use('/api/evidencias', evidenciasRoutes);
+  app.use('/api/soportes-poliza', soportesPolizaRoutes);
   app.use('/api/notificaciones', notificacionesRoutes);
   app.use('/api/firmas', firmasRoutes);
 

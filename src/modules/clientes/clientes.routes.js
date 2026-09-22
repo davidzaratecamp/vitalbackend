@@ -253,8 +253,11 @@ const planSaludSchema = z.object({
   valor_prima: z.coerce.number().min(0),
   npn: z.string().max(40).optional().nullable(),
   estado_prima: z.enum(ESTADO_PRIMA).optional().nullable(),
-  // Para la carta de firma (FirmaCloud) — se manda tal cual, sin el signo $.
-  taxes: z.coerce.number().min(0).optional().nullable(),
+  // taxes: retirado a pedido del usuario (2026-09-22) — ya ningún agente
+  // lo digita ni ningún rol lo ve. Al no estar declarado acá, Zod lo
+  // descarta en silencio aunque alguien lo mande directo por API (misma
+  // técnica que el resto de campos "apagados" de este módulo). La columna
+  // `planes_salud.taxes` queda intacta en la DB (datos históricos).
   // pd/sd/gd: lo que el agente ve en la pantalla "Usted paga" de la otra
   // plataforma (ej. "Sin cargo por visita desde el día 1", "50% coaseguro
   // después del deducible") — texto libre, no un número limpio, aunque la

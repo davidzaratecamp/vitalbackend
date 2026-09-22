@@ -99,7 +99,6 @@ export async function completar(clienteId, userId, data, empresaId) {
       deducible: data.deducible,
       gasto_max_bolsillo: data.gasto_max_bolsillo,
       valor_prima: planActual.valor_prima,
-      taxes: planActual.taxes,
       pd: planActual.pd,
       sd: planActual.sd,
       gd: planActual.gd,

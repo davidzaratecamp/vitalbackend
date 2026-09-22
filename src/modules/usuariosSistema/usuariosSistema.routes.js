@@ -24,8 +24,13 @@ function usuariosQuery() {
     .select(COLS.map((c) => `u.${c}`), 'e.nombre as empresa_nombre');
 }
 
-// Cualquier usuario autenticado puede listar personal (p. ej. para mostrar nombres),
-// pero crear/editar/desactivar es solo admin.
+// Cualquier usuario autenticado puede listar personal (p. ej. para mostrar
+// nombres en desplegables) — esto se mantiene igual. Crear/editar/desactivar
+// SÍ era solo admin, pero a pedido del usuario (2026-09-22) "el admin no
+// puede gestionar usuarios" — se apaga para todos los roles, reversible
+// (mismo patrón que el Data Point en clientes.routes.js): `requireRole()`
+// sin argumentos no deja pasar a nadie. Para reactivarlo: volver a
+// `requireRole('admin')` en las 4 rutas de abajo.
 router.get(
   '/',
   asyncHandler(async (req, res) => {
@@ -38,7 +43,7 @@ router.get(
 
 router.get(
   '/:id',
-  requireRole('admin'),
+  requireRole(),
   asyncHandler(async (req, res) => {
     const user = await usuariosQuery().where({ 'u.id': req.params.id }).first();
     if (!user) throw notFound('Usuario no encontrado');
@@ -67,7 +72,7 @@ const createSchema = z.object({
 
 router.post(
   '/',
-  requireRole('admin'),
+  requireRole(),
   validate(createSchema),
   asyncHandler(async (req, res) => {
     const { name, email, password, role, empresa_id } = req.body;
@@ -104,7 +109,7 @@ const updateSchema = z.object({
 
 router.patch(
   '/:id',
-  requireRole('admin'),
+  requireRole(),
   validate(updateSchema),
   asyncHandler(async (req, res) => {
     const user = await db('usuarios_sistema').where({ id: req.params.id }).first();
@@ -134,7 +139,7 @@ router.patch(
 
 router.delete(
   '/:id',
-  requireRole('admin'),
+  requireRole(),
   asyncHandler(async (req, res) => {
     const user = await db('usuarios_sistema').where({ id: req.params.id }).first();
     if (!user) throw notFound('Usuario no encontrado');
