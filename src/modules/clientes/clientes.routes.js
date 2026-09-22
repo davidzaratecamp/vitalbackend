@@ -57,6 +57,7 @@ const titularSchema = z.object({
   phone_1: z.string().min(7).max(20),
   phone_2: z.string().max(20).optional().nullable(),
   whatsapp: z.string().max(20).optional().nullable(),
+  horario_contactabilidad: z.string().max(120).optional().nullable(),
   contacto_emergencia_nombre: z.string().max(120).optional().nullable(),
   contacto_emergencia_telefono: z.string().max(20).optional().nullable(),
   contacto_emergencia_email: z.string().email().max(190).optional().nullable().or(z.literal('')),
