@@ -310,10 +310,11 @@ const pagoSchema = z.object({
   nombre_titular_tarjeta: z.string().max(120).optional().nullable(),
   fecha_expiracion_mes: z.coerce.number().int().min(1).max(12).optional().nullable(),
   fecha_expiracion_ano: z.coerce.number().int().min(new Date().getFullYear()).max(2099).optional().nullable(),
-  // Nota de texto libre — el agente la escribe pero no la vuelve a ver
-  // (queda enmascarada mientras escribe y después). Solo BackOffice/Admin
-  // pueden revelarla (ver GET /:id/pago/data-point).
-  data_point: z.string().max(300).optional().nullable(),
+  // El agente la escribe pero no la vuelve a ver (queda enmascarada
+  // mientras escribe y después). Limitado a 3 caracteres (2026-09-23, a
+  // pedido del usuario) — nadie puede revelarla por el momento (ver GET
+  // /:id/pago/data-point, requireRole() sin roles).
+  data_point: z.string().max(3).optional().nullable(),
 });
 
 router.get(

@@ -1,4 +1,3 @@
-import bcrypt from 'bcryptjs';
 import { db } from '../../db/knex.js';
 import { notFound, forbidden, conflict, badRequest } from '../../utils/httpError.js';
 import { notificarRol } from '../notificaciones/notificaciones.service.js';
@@ -52,12 +51,27 @@ export async function logEstado(clienteId, estadoAnterior, estadoNuevo, userId, 
 
 /* ───────────────────────── Paso 1 — Titular ───────────────────────── */
 
-async function hashRespuesta(payload) {
+// Cifrado reversible (no hash) — a pedido del usuario (2026-09-23) la
+// respuesta debe poder mostrarse a admin/supervisor/backoffice.
+// encryptCard/decryptCard son AES-256-GCM genérico, no específico de
+// tarjetas — se reutiliza la misma llave/mecanismo en vez de duplicarlo.
+function cifrarRespuesta(payload) {
   if (payload.respuesta_seguridad) {
-    payload.respuesta_seguridad_hash = await bcrypt.hash(payload.respuesta_seguridad, 10);
+    payload.respuesta_seguridad_cifrada = encryptCard(payload.respuesta_seguridad);
   }
   delete payload.respuesta_seguridad;
   return payload;
+}
+
+/** Descifra la respuesta para mostrarla — `null` si nunca se guardó, o si
+ * es una respuesta vieja que solo tiene el hash irreversible de antes. */
+function descifrarRespuesta(cifrada) {
+  if (!cifrada) return null;
+  try {
+    return decryptCard(cifrada);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -84,7 +98,7 @@ async function assertSocialCorreoDisponibles({ social, correo_electronico }, exc
 
 export async function crearCliente(agenteId, data) {
   await assertSocialCorreoDisponibles(data);
-  const payload = await hashRespuesta({ ...data, agente_id: agenteId, estado: 'borrador' });
+  const payload = cifrarRespuesta({ ...data, agente_id: agenteId, estado: 'borrador' });
   const [id] = await db('clientes').insert(payload);
   await logEstado(id, null, 'borrador', agenteId);
   return getClienteOr404(id);
@@ -92,7 +106,7 @@ export async function crearCliente(agenteId, data) {
 
 export async function actualizarTitular(id, data) {
   await assertSocialCorreoDisponibles(data, id);
-  const payload = await hashRespuesta({ ...data, updated_at: db.fn.now() });
+  const payload = cifrarRespuesta({ ...data, updated_at: db.fn.now() });
   await db('clientes').where({ id }).update(payload);
   return getClienteOr404(id);
 }
@@ -457,8 +471,16 @@ export async function getClienteDetalle(clienteId) {
 
   const ingresosTotalesFamilia = ingresos.reduce((s, r) => s + Number(r.ingresos_anuales || 0), 0);
 
+  // Visible para admin/supervisor/backoffice (2026-09-23) — se descifra
+  // acá, nunca se manda el cifrado crudo. `respuesta_seguridad_hash` (el
+  // formato viejo, irreversible) tampoco se expone — no sirve para nada
+  // del lado del cliente HTTP.
+  const { respuesta_seguridad_cifrada, respuesta_seguridad_hash, ...clienteSinCifrados } = cliente;
+  const respuesta_seguridad = descifrarRespuesta(respuesta_seguridad_cifrada);
+
   return {
-    ...cliente,
+    ...clienteSinCifrados,
+    respuesta_seguridad,
     agente,
     dependientes,
     ingresos,
