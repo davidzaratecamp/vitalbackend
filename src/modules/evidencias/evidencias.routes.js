@@ -30,7 +30,9 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: env.uploads.maxSizeBytes, files: env.uploads.maxFiles },
+  // maxFilesEvidencias, no maxFiles — acá no hay límite de negocio (ver
+  // env.js), esto es solo un techo técnico generoso.
+  limits: { fileSize: env.uploads.maxSizeBytes, files: env.uploads.maxFilesEvidencias },
   fileFilter: (_req, file, cb) => {
     if (!env.uploads.allowedMime.includes(file.mimetype)) {
       return cb(badRequest(`Tipo de archivo no permitido: ${file.mimetype}`));
@@ -61,7 +63,7 @@ router.post(
     assertEditable(cliente);
     next();
   }),
-  upload.array('archivos', env.uploads.maxFiles),
+  upload.array('archivos', env.uploads.maxFilesEvidencias),
   asyncHandler(async (req, res) => {
     const files = req.files || [];
     if (!files.length) throw badRequest('No se recibió ningún archivo');
@@ -75,12 +77,10 @@ router.post(
       throw badRequest('Selecciona una categoría válida para el archivo', ['categoria']);
     }
 
-    const [{ n: existentes }] = await db('evidencias').where({ cliente_id: req.params.clienteId }).count({ n: '*' });
-    if (Number(existentes) + files.length > env.uploads.maxFiles) {
-      for (const f of files) fs.unlink(f.path, () => {});
-      throw badRequest(`Máximo ${env.uploads.maxFiles} archivos por cliente (ya tiene ${existentes})`);
-    }
-
+    // Sin tope de cantidad por cliente (2026-09-23, a pedido del usuario)
+    // — con el titular + varios enrolados hacen falta varios archivos por
+    // categoría obligatoria, el límite de 5 de antes bloqueaba casos
+    // legítimos.
     const rows = files.map((f) => ({
       cliente_id: req.params.clienteId,
       nombre_archivo: f.originalname,

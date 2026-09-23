@@ -55,7 +55,15 @@ export const env = {
   uploads: {
     // Carpeta privada — nunca se monta como estático público.
     dir: path.join(backendRoot, 'uploads'),
+    // Sigue aplicando a soportes_poliza (BackOffice) — ese caso de uso no
+    // necesita más.
     maxFiles: 5,
+    // Evidencias del agente (2026-09-23): sin límite de negocio — si el
+    // titular tiene 3 personas más enroladas, hacen falta hasta 4 archivos
+    // por categoría obligatoria (Póliza/Estatus migratorio/Licencia),
+    // fácil de superar los 5 de antes. 100 es solo un techo técnico contra
+    // abuso, nunca pensado para alcanzarse en un caso real.
+    maxFilesEvidencias: 100,
     maxSizeBytes: 5 * 1024 * 1024, // 5MB
     allowedMime: ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png'],
   },
