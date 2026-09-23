@@ -26,7 +26,7 @@ router.get(
   })
 );
 
-const enviarSchema = z.object({ canal: z.enum(['email', 'sms']).optional().default('email') });
+const enviarSchema = z.object({ canal: z.enum(['email', 'sms', 'whatsapp']).optional().default('email') });
 
 router.post(
   '/cliente/:clienteId/enviar',

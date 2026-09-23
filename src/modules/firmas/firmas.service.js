@@ -63,13 +63,13 @@ function construirPayload(cliente, agente, canal) {
 
   const payload = {
     clientName: nombreCompleto,
-    sendChannel: canal, // 'email' | 'sms' — whatsapp/both siguen bloqueados hasta que Meta apruebe (ver PDF).
+    sendChannel: canal, // 'email' | 'sms' | 'whatsapp' — whatsapp habilitado desde 2026-09-22 (número +1 307-357-2609 aprobado en Meta, ver PDF). 'both' no se usa acá, el agente elige un solo canal.
     agentName: nombreParaLaCarta,
     agentCedula: agente.cedula,
     ventaId: String(cliente.id),
     documentData: { vital },
   };
-  if (canal === 'sms') {
+  if (canal === 'sms' || canal === 'whatsapp') {
     payload.clientPhone = formatearTelefonoUS(cliente.phone_1);
   } else {
     payload.clientEmail = cliente.correo_electronico;
@@ -100,11 +100,11 @@ function mapearErrorFirmaCloud(err) {
   return badRequest('No se pudo conectar con FirmaCloud — inténtalo de nuevo en un momento.');
 }
 
-/** Envía la Carta CMS Vital por correo o SMS (el agente elige). Guarda un
- * registro nuevo por cada intento (permite reenviar si expiró o hubo un
- * error, incluso por el otro canal). */
+/** Envía la Carta CMS Vital por correo, SMS o WhatsApp (el agente elige).
+ * Guarda un registro nuevo por cada intento (permite reenviar si expiró o
+ * hubo un error, incluso por otro canal). */
 export async function enviarFirma(clienteId, userId, canal = 'email') {
-  if (canal !== 'email' && canal !== 'sms') throw badRequest('Canal de envío inválido');
+  if (!['email', 'sms', 'whatsapp'].includes(canal)) throw badRequest('Canal de envío inválido');
 
   const cliente = await getClienteDetalle(clienteId);
 
@@ -113,7 +113,9 @@ export async function enviarFirma(clienteId, userId, canal = 'email') {
       throw badRequest('El cliente no tiene correo electrónico registrado — hace falta para enviar la carta.');
     }
   } else if (!formatearTelefonoUS(cliente.phone_1)) {
-    throw badRequest('El teléfono del cliente no es un número de EE. UU. válido para enviar por SMS (10 dígitos).');
+    throw badRequest(
+      `El teléfono del cliente no es un número de EE. UU. válido para enviar por ${canal === 'sms' ? 'SMS' : 'WhatsApp'} (10 dígitos).`
+    );
   }
 
   const agente = await db('usuarios_sistema').where({ id: cliente.agente_id }).first();
