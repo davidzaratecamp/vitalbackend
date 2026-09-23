@@ -1,10 +1,14 @@
 /**
- * Datos de "BaseEstadosy CoberturasVitaldato 2026.xlsx" (compartido por el
- * usuario) — igual que 002_cobertura_zip.js, quedan acá como datos planos,
- * no como dependencia del Excel. Nombres de aseguradora ya normalizados
- * para calzar con el catálogo (ANTHEM/WELLPOINT → Anthem + Wellpoint,
- * FL BLUE → Florida Blue, COMUNITY → Community, etc — el Excel trae
- * variaciones de escritura entre productores).
+ * Datos de "BaseEstadosy CoberturasVitaldato 2026.xlsx" (Luis Vitier) y
+ * "Base Coberturas Nuevos NPN'S vital 23_09_2026.xlsx" (Jessica Trujillo,
+ * Samuel Payne, Talia Bordon — actualizado 2026-09-23), ambos compartidos
+ * por el usuario — igual que 002_cobertura_zip.js, quedan acá como datos
+ * planos, no como dependencia del Excel. Nombres de aseguradora ya
+ * normalizados para calzar con el catálogo (AMBETTER→Ambetter,
+ * ANTHEM/WELLPOINT→Anthem + Wellpoint, FL BLUE→Florida Blue, etc — cada
+ * Excel trae variaciones de escritura). Estados traducidos al inglés
+ * (Carolina del Norte→North Carolina, Carolina del Sur→South Carolina)
+ * para calzar con el resto del catálogo de ubicaciones.
  */
 const COBERTURA_POR_PRODUCTOR = {
   'Luis Vitier': {
@@ -31,34 +35,52 @@ const COBERTURA_POR_PRODUCTOR = {
     Texas: ['Oscar', 'Anthem', 'Wellpoint', 'Ambetter', 'BCBS', 'UHC', 'Harbor Health', 'Imperial Health', 'Community Health Choice'],
     Virginia: ['Oscar', 'Anthem', 'Wellpoint', 'UHC', 'Sentara', 'Kaiser'],
   },
+  // Jessica Trujillo / Samuel Payne / Talia Bordon: actualizado desde
+  // "Base Coberturas Nuevos NPN'S vital 23_09_2026.xlsx" (compartido por
+  // el usuario, 2026-09-23) — reemplaza por completo lo que había antes
+  // para estos 3. Luis Vitier NO viene en ese archivo (ya estaba al día)
+  // y queda sin tocar.
   'Jessica Trujillo': {
-    Texas: ['Molina', 'Ambetter', 'Cigna', 'Oscar'],
-    Georgia: ['Ambetter', 'Cigna', 'Oscar'],
-    'North Carolina': ['Ambetter', 'Oscar'],
-    'South Carolina': ['Molina', 'Ambetter'],
-    Florida: ['Molina', 'Ambetter', 'Cigna', 'Oscar'],
-    Ohio: ['Molina', 'Ambetter', 'Oscar'],
-    Tennessee: ['Ambetter', 'Cigna', 'Oscar'],
-    Virginia: ['Oscar'],
-    Michigan: ['Molina', 'Ambetter', 'Oscar'],
-    Arizona: ['Ambetter', 'Cigna', 'Oscar'],
-    Oklahoma: ['Ambetter', 'Oscar'],
-    Missouri: ['Ambetter', 'Oscar'],
-    Mississippi: ['Molina', 'Ambetter'],
-  },
-  'Talia Bordon': {
-    Texas: ['Molina', 'Ambetter', 'UHC', 'Cigna', 'Oscar'],
-    Georgia: ['Ambetter', 'UHC', 'Cigna', 'Oscar', 'CareSource'],
-    'North Carolina': ['Ambetter', 'UHC', 'Cigna', 'Oscar'],
-    'South Carolina': ['Molina', 'Ambetter', 'Cigna'],
-    Florida: ['Molina', 'Ambetter', 'UHC', 'Cigna', 'Oscar'],
+    Tennessee: ['Ambetter', 'Oscar', 'UHC', 'Cigna'],
+    Arizona: ['Ambetter', 'Oscar', 'UHC', 'Cigna'],
+    Florida: ['Ambetter', 'Oscar', 'UHC', 'Molina'],
+    Texas: ['Ambetter', 'Oscar', 'UHC', 'Molina'],
+    'North Carolina': ['Ambetter', 'Oscar', 'UHC'],
+    Ohio: ['Ambetter', 'Oscar', 'UHC'],
+    Michigan: ['Ambetter', 'Oscar', 'UHC'],
+    Missouri: ['Ambetter', 'Oscar', 'UHC'],
+    'South Carolina': ['Ambetter', 'UHC'],
+    Mississippi: ['Ambetter', 'UHC'],
+    Illinois: ['Oscar', 'UHC'],
+    Virginia: ['Oscar', 'UHC'],
+    Kansas: ['UHC'],
+    Georgia: ['Oscar'],
+    // Oklahoma: el Excel la marca "licencia suspendida, ya se compró,
+    // esperar a que la acepten" — se omite hasta que la aprueben, no es
+    // cobertura activa todavía.
   },
   'Samuel Payne': {
-    Texas: ['Molina', 'Ambetter', 'UHC', 'Oscar'],
-    Georgia: ['Ambetter', 'UHC', 'Oscar', 'CareSource'],
-    'North Carolina': ['Ambetter', 'UHC', 'Oscar'],
-    'South Carolina': ['Molina', 'Ambetter'],
-    Florida: ['Molina', 'Ambetter', 'UHC', 'Oscar'],
+    Texas: ['Ambetter', 'Oscar', 'UHC', 'Cigna', 'Molina'],
+    Georgia: ['Ambetter', 'Oscar', 'UHC', 'Cigna'],
+    'North Carolina': ['Ambetter', 'Oscar', 'UHC', 'Cigna'],
+    Florida: ['Ambetter', 'Oscar', 'UHC', 'Molina'],
+    'South Carolina': ['Ambetter', 'UHC', 'Cigna'],
+    Arizona: ['Oscar', 'UHC'],
+    Kansas: ['Oscar', 'UHC'],
+    Ohio: ['Oscar', 'UHC'],
+    Oklahoma: ['Oscar', 'UHC'],
+    Tennessee: ['Oscar', 'UHC'],
+    Indiana: ['UHC'],
+  },
+  'Talia Bordon': {
+    Texas: ['Ambetter', 'Oscar', 'UHC', 'Cigna'],
+    Georgia: ['Ambetter', 'Oscar', 'UHC', 'Cigna'],
+    'North Carolina': ['Ambetter', 'Oscar', 'UHC', 'Cigna'],
+    'South Carolina': ['Ambetter', 'UHC', 'Cigna'],
+    Florida: ['Oscar', 'UHC'],
+    Michigan: ['Oscar', 'UHC'],
+    Missouri: ['Oscar', 'UHC'],
+    Tennessee: ['Oscar', 'UHC'],
   },
 };
 
