@@ -33,6 +33,16 @@ export function createApp() {
   app.use(cors({ origin: env.corsOrigin, credentials: true }));
   if (isDev) app.use(morgan('dev'));
 
+  // Ninguna respuesta de la API debe quedar cacheada por el navegador (ni
+  // por ningún proxy intermedio) — son datos sensibles y siempre deben
+  // salir frescos de la base. Sin esto, helmet() no manda ningún
+  // Cache-Control, y algunos navegadores pueden reutilizar una respuesta
+  // vieja bajo ciertas condiciones aunque no exista un caché "explícito".
+  app.use('/api', (_req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store');
+    next();
+  });
+
   app.get('/api/health', (_req, res) => res.json({ ok: true, service: 'vital-api' }));
 
   app.use('/api/auth', authRoutes);
