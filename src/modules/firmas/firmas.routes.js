@@ -32,10 +32,11 @@ router.post(
   '/cliente/:clienteId/enviar',
   validate(enviarSchema),
   asyncHandler(async (req, res) => {
-    // Solo el agente (dueño del caso) y admin envían la carta — supervisor
-    // es solo-lectura total, y backoffice solo revisa/aprueba, no le
-    // corresponde reenviarle nada al cliente.
-    if (req.user.role !== 'agente' && req.user.role !== 'admin') {
+    // Solo el agente (dueño del caso) envía la carta (2026-09-23: se le
+    // quitó a admin también) — supervisor es solo-lectura total, y
+    // backoffice/admin solo revisan/aprueban, no les corresponde
+    // reenviarle nada al cliente.
+    if (req.user.role !== 'agente') {
       throw forbidden('Solo el agente puede enviar la carta de firma');
     }
     await assertAccess(req);
