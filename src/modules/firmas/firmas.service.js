@@ -28,6 +28,15 @@ function formatearTelefonoUS(telefono) {
   return null;
 }
 
+/** SMS usa `phone_1` (Teléfono principal) — WhatsApp usa `whatsapp` si el
+ * cliente lo cargó distinto, o cae a `phone_1` si lo dejó vacío (muchas
+ * veces es el mismo número, y eso está bien). Nunca se deben confundir
+ * cuando SÍ son distintos. */
+function telefonoParaCanal(cliente, canal) {
+  if (canal === 'whatsapp') return formatearTelefonoUS(cliente.whatsapp || cliente.phone_1);
+  return formatearTelefonoUS(cliente.phone_1);
+}
+
 function construirPayload(cliente, agente, canal) {
   const nombreCompleto = `${cliente.nombres} ${cliente.apellidos}`;
   const plan = cliente.plan_salud;
@@ -70,7 +79,7 @@ function construirPayload(cliente, agente, canal) {
     documentData: { vital },
   };
   if (canal === 'sms' || canal === 'whatsapp') {
-    payload.clientPhone = formatearTelefonoUS(cliente.phone_1);
+    payload.clientPhone = telefonoParaCanal(cliente, canal);
   } else {
     payload.clientEmail = cliente.correo_electronico;
   }
@@ -112,9 +121,11 @@ export async function enviarFirma(clienteId, userId, canal = 'email') {
     if (!cliente.correo_electronico) {
       throw badRequest('El cliente no tiene correo electrónico registrado — hace falta para enviar la carta.');
     }
-  } else if (!formatearTelefonoUS(cliente.phone_1)) {
+  } else if (!telefonoParaCanal(cliente, canal)) {
     throw badRequest(
-      `El teléfono del cliente no es un número de EE. UU. válido para enviar por ${canal === 'sms' ? 'SMS' : 'WhatsApp'} (10 dígitos).`
+      canal === 'sms'
+        ? 'El teléfono principal del cliente no es un número de EE. UU. válido para enviar por SMS (10 dígitos).'
+        : 'Ni el WhatsApp ni el teléfono principal del cliente son un número de EE. UU. válido para enviar por WhatsApp (10 dígitos).'
     );
   }
 
