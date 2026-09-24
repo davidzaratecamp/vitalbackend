@@ -117,6 +117,22 @@ router.get(
   })
 );
 
+// Eliminar un borrador — agente (el suyo), supervisor y admin (2026-09-24).
+// BackOffice queda afuera a propósito, no le corresponde. `loadCliente` ya
+// resolvió ownership/empresa/admin vía assertAccesoCliente; acá solo se
+// filtra el rol y el propio servicio exige que siga en 'borrador'.
+router.delete(
+  '/:id',
+  loadCliente,
+  asyncHandler(async (req, res) => {
+    if (!['agente', 'supervisor', 'admin'].includes(req.user.role)) {
+      throw forbidden('No tienes permiso para eliminar este registro');
+    }
+    await svc.eliminarCliente(req.params.id);
+    res.json({ ok: true });
+  })
+);
+
 /* ───────────────────────── Paso 2 — Cónyuge ───────────────────────── */
 
 const conyugeSchema = z.object({

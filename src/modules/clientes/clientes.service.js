@@ -1,4 +1,7 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { db } from '../../db/knex.js';
+import { env } from '../../config/env.js';
 import { notFound, forbidden, conflict, badRequest } from '../../utils/httpError.js';
 import { notificarRol } from '../notificaciones/notificaciones.service.js';
 import { encryptCard, decryptCard, detectarMarca } from '../../utils/cardCrypto.js';
@@ -36,6 +39,38 @@ export async function getClienteOr404(id) {
 export function assertEditable(cliente) {
   if (!EDITABLE_STATES.includes(cliente.estado)) {
     throw conflict('Este registro ya no se puede editar en su estado actual');
+  }
+}
+
+/**
+ * Borra un registro en 'borrador' por completo — a pedido del usuario
+ * (2026-09-24): hay muchos borradores que el agente nunca termina de
+ * gestionar y quedan ahí para siempre. Solo borrador, nunca un caso que
+ * ya se envió a BackOffice (esos quedan protegidos por el estado, ni
+ * siquiera se intenta). Las tablas hijas cascada solas (dependientes,
+ * ingresos, planes_salud, informacion_pago, evidencias, historial,
+ * observaciones, firmas_documentos, soportes_poliza) — la única que NO
+ * tiene CASCADE a propósito es accesos_tarjeta (es un log de auditoría),
+ * así que se borra aparte primero para no chocar con la FK. Los archivos
+ * físicos (evidencias/soportes) se borran del disco después de que la
+ * fila de la base ya se fue.
+ */
+export async function eliminarCliente(clienteId) {
+  const cliente = await getClienteOr404(clienteId);
+  if (cliente.estado !== 'borrador') {
+    throw conflict('Solo se pueden eliminar registros en borrador — este ya se envió o fue gestionado.');
+  }
+
+  const archivos = [
+    ...(await db('evidencias').where({ cliente_id: clienteId }).select('ruta_archivo')),
+    ...(await db('soportes_poliza').where({ cliente_id: clienteId }).select('ruta_archivo')),
+  ];
+
+  await db('accesos_tarjeta').where({ cliente_id: clienteId }).del();
+  await db('clientes').where({ id: clienteId }).del();
+
+  for (const { ruta_archivo } of archivos) {
+    fs.unlink(path.join(env.uploads.dir, ruta_archivo), () => {});
   }
 }
 
