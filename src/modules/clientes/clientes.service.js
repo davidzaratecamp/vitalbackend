@@ -146,6 +146,26 @@ export async function actualizarTitular(id, data) {
   return getClienteOr404(id);
 }
 
+/**
+ * MySQL devuelve las columnas booleanas (tinyint) como el NÚMERO 0/1, no
+ * como true/false — mysql2 no las convierte solo. Eso rompió la pantalla
+ * (2026-09-24): `{d.medicare_medicaid && '· Medicare/Medicaid'}` en React,
+ * cuando el valor es el número `0`, no se omite como pasaría con `false`
+ * — React SÍ pinta un `0` literal en la página (a diferencia de false/
+ * null/undefined, que si se ignoran). Con el campo justo después del SSN
+ * sin separador, se veía como un dígito de más pegado al número. Se
+ * normaliza acá, en el único lugar que arma cada fila de `dependientes`,
+ * para que ningún componente (presente o futuro) pueda pisar el mismo
+ * rastrillo.
+ */
+function normalizarDependiente(row) {
+  if (!row) return row;
+  return { ...row, solicita_cobertura: !!row.solicita_cobertura, medicare_medicaid: !!row.medicare_medicaid };
+}
+function normalizarDependientes(rows) {
+  return rows.map(normalizarDependiente);
+}
+
 /* ───────────────────────── Paso 2 — Cónyuge ───────────────────────── */
 
 export async function setConyuge(clienteId, data) {
@@ -158,28 +178,28 @@ export async function setConyuge(clienteId, data) {
   delete payload.no_tiene;
   if (existing) {
     await db('dependientes').where({ id: existing.id }).update({ ...payload, updated_at: db.fn.now() });
-    return db('dependientes').where({ id: existing.id }).first();
+    return normalizarDependiente(await db('dependientes').where({ id: existing.id }).first());
   }
   const [id] = await db('dependientes').insert(payload);
-  return db('dependientes').where({ id }).first();
+  return normalizarDependiente(await db('dependientes').where({ id }).first());
 }
 
 export async function getConyuge(clienteId) {
-  return db('dependientes').where({ cliente_id: clienteId, parentesco: 'Conyuge' }).first();
+  return normalizarDependiente(await db('dependientes').where({ cliente_id: clienteId, parentesco: 'Conyuge' }).first());
 }
 
 /* ───────────────────────── Paso 3 — Dependientes ───────────────────────── */
 
 export async function agregarDependiente(clienteId, data) {
   const [id] = await db('dependientes').insert({ ...data, cliente_id: clienteId });
-  return db('dependientes').where({ id }).first();
+  return normalizarDependiente(await db('dependientes').where({ id }).first());
 }
 
 export async function actualizarDependiente(clienteId, depId, data) {
   const dep = await db('dependientes').where({ id: depId, cliente_id: clienteId }).first();
   if (!dep) throw notFound('Dependiente no encontrado');
   await db('dependientes').where({ id: depId }).update({ ...data, updated_at: db.fn.now() });
-  return db('dependientes').where({ id: depId }).first();
+  return normalizarDependiente(await db('dependientes').where({ id: depId }).first());
 }
 
 export async function eliminarDependiente(clienteId, depId) {
@@ -188,7 +208,8 @@ export async function eliminarDependiente(clienteId, depId) {
 }
 
 export async function listarDependientes(clienteId) {
-  return db('dependientes').where({ cliente_id: clienteId }).whereNot('parentesco', 'Conyuge').orderBy('id');
+  const rows = await db('dependientes').where({ cliente_id: clienteId }).whereNot('parentesco', 'Conyuge').orderBy('id');
+  return normalizarDependientes(rows);
 }
 
 /* ───────────────────────── Paso 4 — Ingresos ───────────────────────── */
@@ -487,7 +508,7 @@ export async function getClienteDetalle(clienteId) {
   const cliente = await getClienteOr404(clienteId);
   const [agente, dependientes, ingresos, plan, pago, evidencias, historial, observacionesRows] = await Promise.all([
     db('usuarios_sistema').select('id', 'name', 'email').where({ id: cliente.agente_id }).first(),
-    db('dependientes').where({ cliente_id: clienteId }).orderBy('id'),
+    db('dependientes').where({ cliente_id: clienteId }).orderBy('id').then(normalizarDependientes),
     db('ingresos').where({ cliente_id: clienteId }),
     getPlanSaludActual(clienteId),
     getPago(clienteId),
@@ -515,6 +536,7 @@ export async function getClienteDetalle(clienteId) {
 
   return {
     ...clienteSinCifrados,
+    solicita_cobertura: !!clienteSinCifrados.solicita_cobertura,
     respuesta_seguridad,
     agente,
     dependientes,
