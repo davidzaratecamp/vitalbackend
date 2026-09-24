@@ -9,6 +9,7 @@ import { asyncHandler } from '../../utils/asyncHandler.js';
 import { requireAuth } from '../../middleware/auth.js';
 import { badRequest, notFound, forbidden } from '../../utils/httpError.js';
 import { getClienteOr404, assertAccesoCliente, assertEditable } from '../clientes/clientes.service.js';
+import { assertCasoActivo } from '../casosPostventa/casosPostventa.service.js';
 import { CATEGORIA_EVIDENCIA } from '../clientes/clientes.constants.js';
 
 const router = Router();
@@ -47,6 +48,26 @@ async function assertAccess(req, clienteId) {
   return cliente;
 }
 
+// Mismo criterio que assertCanEdit en clientes.routes.js: el agente sube/
+// borra evidencia de su propio borrador/rechazado; sobre un cliente ya
+// APROBADO (suyo o de otro agente de su empresa — postventa) y BackOffice,
+// solo si tienen un caso de postventa activo para ese cliente.
+async function assertCanEditEvidencia(req, cliente) {
+  if (req.user.role === 'agente') {
+    if (cliente.agente_id === req.user.id && cliente.estado !== 'aprobado') {
+      assertEditable(cliente);
+      return;
+    }
+    await assertCasoActivo(cliente.id, 'agente');
+    return;
+  }
+  if (req.user.role === 'backoffice') {
+    await assertCasoActivo(cliente.id, 'backoffice');
+    return;
+  }
+  throw forbidden('No tienes permiso para gestionar evidencias de este registro');
+}
+
 router.get(
   '/cliente/:clienteId',
   asyncHandler(async (req, res) => {
@@ -59,8 +80,7 @@ router.post(
   '/cliente/:clienteId',
   asyncHandler(async (req, res, next) => {
     const cliente = await assertAccess(req, req.params.clienteId);
-    if (req.user.role !== 'agente') throw forbidden('Solo el agente sube evidencias');
-    assertEditable(cliente);
+    await assertCanEditEvidencia(req, cliente);
     next();
   }),
   upload.array('archivos', env.uploads.maxFilesEvidencias),
@@ -119,8 +139,7 @@ router.delete(
     const row = await db('evidencias').where({ id: req.params.id }).first();
     if (!row) throw notFound('Evidencia no encontrada');
     const cliente = await assertAccess(req, row.cliente_id);
-    if (req.user.role !== 'agente') throw forbidden('Solo el agente elimina evidencias');
-    assertEditable(cliente);
+    await assertCanEditEvidencia(req, cliente);
 
     await db('evidencias').where({ id: row.id }).del();
     const fullPath = path.join(env.uploads.dir, row.ruta_archivo);

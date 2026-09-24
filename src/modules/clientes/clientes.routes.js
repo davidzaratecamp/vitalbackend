@@ -5,6 +5,7 @@ import { validate } from '../../middleware/validate.js';
 import { requireAuth, requireRole } from '../../middleware/auth.js';
 import { forbidden } from '../../utils/httpError.js';
 import * as svc from './clientes.service.js';
+import * as casosPostventaSvc from '../casosPostventa/casosPostventa.service.js';
 import {
   SEXO,
   ESTATUS_MIGRATORIO,
@@ -32,9 +33,28 @@ async function loadCliente(req, _res, next) {
   next();
 }
 
-function assertCanEdit(req) {
-  if (req.user.role !== 'agente') throw forbidden('Solo el agente edita el registro');
-  svc.assertEditable(req.cliente);
+// El agente tiene dos caminos (2026-09-24: "el customer es el mismo
+// agente", ya no es un rol aparte): su propio borrador/rechazado, como
+// siempre — o cualquier cliente ya APROBADO (suyo o de otro agente de su
+// misma empresa, `loadCliente`/assertAccesoCliente ya lo dejó pasar) SI
+// tiene un caso de postventa activo para ese cliente (ver
+// assertCasoActivo) — no alcanza con el rol solo, evita editar un aprobado
+// sin haber pasado por "Validar" antes. BackOffice: mismo candado, solo
+// mientras el caso está escalado a su cola.
+async function assertCanEdit(req) {
+  if (req.user.role === 'agente') {
+    if (req.cliente.agente_id === req.user.id && req.cliente.estado !== 'aprobado') {
+      svc.assertEditable(req.cliente);
+      return;
+    }
+    await casosPostventaSvc.assertCasoActivo(req.cliente.id, 'agente');
+    return;
+  }
+  if (req.user.role === 'backoffice') {
+    await casosPostventaSvc.assertCasoActivo(req.cliente.id, 'backoffice');
+    return;
+  }
+  throw forbidden('No tienes permiso para editar este registro');
 }
 
 /* ───────────────────────── Paso 1 — Titular ───────────────────────── */
@@ -81,7 +101,7 @@ router.patch(
   loadCliente,
   validate(titularSchema.partial()),
   asyncHandler(async (req, res) => {
-    assertCanEdit(req);
+    await assertCanEdit(req);
     res.json(await svc.actualizarTitular(req.params.id, req.body));
   })
 );
@@ -117,10 +137,11 @@ router.get(
   })
 );
 
-// Eliminar un borrador — agente (el suyo), supervisor y admin (2026-09-24).
-// BackOffice queda afuera a propósito, no le corresponde. `loadCliente` ya
-// resolvió ownership/empresa/admin vía assertAccesoCliente; acá solo se
-// filtra el rol y el propio servicio exige que siga en 'borrador'.
+// Eliminar — agente (el suyo: borrador o rechazado_backoffice), supervisor y
+// admin (solo borrador). BackOffice queda afuera a propósito, no le
+// corresponde. `loadCliente` ya resolvió ownership/empresa/admin vía
+// assertAccesoCliente; acá solo se filtra el rol y el propio servicio exige
+// el estado correcto para ese rol.
 router.delete(
   '/:id',
   loadCliente,
@@ -128,7 +149,7 @@ router.delete(
     if (!['agente', 'supervisor', 'admin'].includes(req.user.role)) {
       throw forbidden('No tienes permiso para eliminar este registro');
     }
-    await svc.eliminarCliente(req.params.id);
+    await svc.eliminarCliente(req.params.id, req.user.role);
     res.json({ ok: true });
   })
 );
@@ -152,7 +173,7 @@ router.put(
   loadCliente,
   validate(conyugeSchema),
   asyncHandler(async (req, res) => {
-    assertCanEdit(req);
+    await assertCanEdit(req);
     res.json(await svc.setConyuge(req.params.id, req.body));
   })
 );
@@ -192,7 +213,7 @@ router.post(
   loadCliente,
   validate(dependienteSchema),
   asyncHandler(async (req, res) => {
-    assertCanEdit(req);
+    await assertCanEdit(req);
     res.status(201).json(await svc.agregarDependiente(req.params.id, req.body));
   })
 );
@@ -202,7 +223,7 @@ router.patch(
   loadCliente,
   validate(dependienteSchema.partial()),
   asyncHandler(async (req, res) => {
-    assertCanEdit(req);
+    await assertCanEdit(req);
     res.json(await svc.actualizarDependiente(req.params.id, req.params.depId, req.body));
   })
 );
@@ -211,7 +232,7 @@ router.delete(
   '/:id/dependientes/:depId',
   loadCliente,
   asyncHandler(async (req, res) => {
-    assertCanEdit(req);
+    await assertCanEdit(req);
     await svc.eliminarDependiente(req.params.id, req.params.depId);
     res.json({ ok: true });
   })
@@ -243,7 +264,7 @@ router.put(
   loadCliente,
   validate(ingresoSchema),
   asyncHandler(async (req, res) => {
-    assertCanEdit(req);
+    await assertCanEdit(req);
     res.json(await svc.setIngresoTitular(req.params.id, req.body));
   })
 );
@@ -253,7 +274,7 @@ router.put(
   loadCliente,
   validate(ingresoSchema),
   asyncHandler(async (req, res) => {
-    assertCanEdit(req);
+    await assertCanEdit(req);
     res.json(await svc.setIngresoDependiente(req.params.id, req.params.depId, req.body));
   })
 );
@@ -309,7 +330,7 @@ router.put(
   asyncHandler(async (req, res) => {
     // Paso 5 del Agente (cotización). La confirmación de BackOffice usa su
     // propio endpoint (PUT /api/backoffice/clientes/:id) — ver ese módulo.
-    assertCanEdit(req);
+    await assertCanEdit(req);
     res.json(await svc.setPlanSalud(req.params.id, req.body, req.user.id, 'cotizado_agente'));
   })
 );
@@ -346,7 +367,7 @@ router.put(
   loadCliente,
   validate(pagoSchema),
   asyncHandler(async (req, res) => {
-    assertCanEdit(req);
+    await assertCanEdit(req);
     res.json(await svc.setPago(req.params.id, req.body));
   })
 );

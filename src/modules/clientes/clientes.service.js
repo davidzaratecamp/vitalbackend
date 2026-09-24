@@ -11,7 +11,12 @@ const EDITABLE_STATES = ['borrador', 'rechazado_backoffice'];
 
 /**
  * Acceso general a un cliente, según rol:
- * - agente: solo el suyo (igual que antes).
+ * - agente: el suyo (cualquier estado, igual que antes) — o, desde
+ *   2026-09-24 ("el customer es el mismo agente", integración del rol
+ *   Customer dentro de agente), cualquier cliente ya APROBADO de un agente
+ *   de SU MISMA empresa aunque no lo haya vendido él — es el acceso que
+ *   necesita para gestionar postventa. No aplica a boradores/pendientes/
+ *   rechazados ajenos, solo a aprobados.
  * - backoffice / supervisor: solo clientes de agentes de SU MISMA empresa
  *   (Vital absorbió a la extinta Asiste Health Care — "Vital Asiste" — pero
  *   ambos lados quedan separados entre sí; ver migración 20260919120000).
@@ -19,8 +24,12 @@ const EDITABLE_STATES = ['borrador', 'rechazado_backoffice'];
  */
 export async function assertAccesoCliente(cliente, user) {
   if (user.role === 'agente') {
-    if (cliente.agente_id !== user.id) throw forbidden('Este cliente no te pertenece');
-    return;
+    if (cliente.agente_id === user.id) return;
+    if (cliente.estado === 'aprobado' && user.empresa_id) {
+      const dueño = await db('usuarios_sistema').where({ id: cliente.agente_id }).first('empresa_id');
+      if (dueño && dueño.empresa_id === user.empresa_id) return;
+    }
+    throw forbidden('Este cliente no te pertenece');
   }
   if (user.role === 'backoffice' || user.role === 'supervisor') {
     if (!user.empresa_id) throw forbidden('Tu cuenta no tiene una empresa asignada — pídele a un admin que la configure');
@@ -42,23 +51,38 @@ export function assertEditable(cliente) {
   }
 }
 
+// Agente: borrador (suyo) + rechazado_backoffice (2026-09-24, a pedido del
+// usuario: "el agente pueda eliminar también los casos que el backoffice le
+// rechaza" — solo esos dos estados, nunca pendiente_backoffice ni
+// aprobado). Supervisor/admin: solo borrador, sin cambios.
+const ESTADOS_ELIMINABLES_POR_ROL = {
+  agente: ['borrador', 'rechazado_backoffice'],
+  supervisor: ['borrador'],
+  admin: ['borrador'],
+};
+
 /**
- * Borra un registro en 'borrador' por completo — a pedido del usuario
- * (2026-09-24): hay muchos borradores que el agente nunca termina de
- * gestionar y quedan ahí para siempre. Solo borrador, nunca un caso que
- * ya se envió a BackOffice (esos quedan protegidos por el estado, ni
- * siquiera se intenta). Las tablas hijas cascada solas (dependientes,
- * ingresos, planes_salud, informacion_pago, evidencias, historial,
- * observaciones, firmas_documentos, soportes_poliza) — la única que NO
- * tiene CASCADE a propósito es accesos_tarjeta (es un log de auditoría),
- * así que se borra aparte primero para no chocar con la FK. Los archivos
- * físicos (evidencias/soportes) se borran del disco después de que la
- * fila de la base ya se fue.
+ * Borra un registro por completo — a pedido del usuario (2026-09-24): hay
+ * muchos borradores que el agente nunca termina de gestionar y quedan ahí
+ * para siempre, y casos rechazados que tampoco corrige. Nunca uno que siga
+ * pendiente en BackOffice o ya aprobado (esos quedan protegidos por el
+ * estado, ni siquiera se intenta). Las tablas hijas cascada solas
+ * (dependientes, ingresos, planes_salud, informacion_pago, evidencias,
+ * historial, observaciones, firmas_documentos, soportes_poliza) — la única
+ * que NO tiene CASCADE a propósito es accesos_tarjeta (es un log de
+ * auditoría), así que se borra aparte primero para no chocar con la FK.
+ * Los archivos físicos (evidencias/soportes) se borran del disco después de
+ * que la fila de la base ya se fue.
  */
-export async function eliminarCliente(clienteId) {
+export async function eliminarCliente(clienteId, userRole) {
   const cliente = await getClienteOr404(clienteId);
-  if (cliente.estado !== 'borrador') {
-    throw conflict('Solo se pueden eliminar registros en borrador — este ya se envió o fue gestionado.');
+  const estadosPermitidos = ESTADOS_ELIMINABLES_POR_ROL[userRole] ?? ['borrador'];
+  if (!estadosPermitidos.includes(cliente.estado)) {
+    throw conflict(
+      userRole === 'agente'
+        ? 'Solo se pueden eliminar registros en borrador o rechazados por BackOffice.'
+        : 'Solo se pueden eliminar registros en borrador — este ya se envió o fue gestionado.'
+    );
   }
 
   const archivos = [
