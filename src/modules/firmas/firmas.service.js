@@ -37,6 +37,30 @@ function telefonoParaCanal(cliente, canal) {
   return formatearTelefonoUS(cliente.phone_1);
 }
 
+/**
+ * PD y GD: FirmaCloud le antepone el signo "$" automáticamente en el PDF,
+ * sin importar lo que se le mande (contrato documentado) — si el agente ya
+ * escribió el "$" a mano, la carta queda con "$$70" duplicado. Se le quita
+ * acá el que el agente haya puesto, para que quede el único que pone
+ * FirmaCloud.
+ */
+function sinSignoPesos(valor) {
+  return valor.replace(/^\s*\$\s*/, '').trim();
+}
+
+/**
+ * SD es la ÚNICA excepción del contrato: FirmaCloud NO le agrega nada, va
+ * tal cual se mande. Si el agente escribió el valor sin el "$" (el mismo
+ * hábito que con PD/GD, donde sí se agrega solo), la carta queda sin
+ * signo — encontrado en un caso real (2026-09-24). Se agrega acá si hace
+ * falta, salvo que ya lo tenga o sea un porcentaje (ese no lleva $).
+ */
+function conSignoPesosSiHaceFalta(valor) {
+  const limpio = valor.trim();
+  if (!limpio || limpio.startsWith('$') || limpio.includes('%')) return limpio;
+  return `$${limpio}`;
+}
+
 function construirPayload(cliente, agente, canal) {
   const nombreCompleto = `${cliente.nombres} ${cliente.apellidos}`;
   const plan = cliente.plan_salud;
@@ -63,11 +87,13 @@ function construirPayload(cliente, agente, canal) {
     if (plan.valor_prima != null) vital.monthlyPay = String(plan.valor_prima);
     if (plan.deducible != null) vital.deductible = String(plan.deducible);
     // gd/pd/sd: texto libre tal como lo copió el agente (ver migración
-    // 20260917140000... eh, 20260917130100_cobertura_plan_salud.js) — se
-    // manda tal cual, aunque el contrato de la API los llame "numérico".
-    if (plan.gd) vital.gd = plan.gd;
-    if (plan.pd) vital.pd = plan.pd;
-    if (plan.sd) vital.sd = plan.sd;
+    // 20260917140000... eh, 20260917130100_cobertura_plan_salud.js), pero
+    // normalizado para el "$" según el contrato real de FirmaCloud (ver
+    // sinSignoPesos/conSignoPesosSiHaceFalta arriba) — así la carta queda
+    // bien sin importar si el agente lo escribió con o sin el signo.
+    if (plan.gd) vital.gd = sinSignoPesos(plan.gd);
+    if (plan.pd) vital.pd = sinSignoPesos(plan.pd);
+    if (plan.sd) vital.sd = conSignoPesosSiHaceFalta(plan.sd);
   }
 
   const payload = {
