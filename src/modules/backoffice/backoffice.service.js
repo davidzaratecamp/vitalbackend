@@ -51,14 +51,17 @@ export async function listarCola(filters = {}, empresaId) {
   if (filters.hasta) q.andWhere(campoFecha, '<=', `${filters.hasta} 23:59:59`);
   if (filters.q) {
     const like = `%${filters.q}%`;
-    q.andWhere((b) =>
-      b
-        .where('c.nombres', 'like', like)
+    // El ID también cuenta como búsqueda — a pedido del usuario
+    // (2026-09-24), exacto (no "like") para no confundir el 1 con el 11.
+    const comoId = Number.isInteger(Number(filters.q)) ? Number(filters.q) : null;
+    q.andWhere((b) => {
+      b.where('c.nombres', 'like', like)
         .orWhere('c.apellidos', 'like', like)
         .orWhere('c.correo_electronico', 'like', like)
         .orWhere('c.social', 'like', like)
-        .orWhere('c.phone_1', 'like', like)
-    );
+        .orWhere('c.phone_1', 'like', like);
+      if (comoId !== null) b.orWhere('c.id', comoId);
+    });
   }
   return q;
 }

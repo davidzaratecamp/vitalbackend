@@ -17,9 +17,9 @@ router.use(requireAuth, requireRole('admin', 'supervisor'));
  * parámetro a mano.
  */
 function parseFilters(req) {
-  const q = req.query || {};
-  const empresaId = req.user.role === 'supervisor' ? req.user.empresa_id : q.empresaId;
-  return { estado: q.estado, from: q.from, to: q.to, agenteId: q.agenteId, empresaId };
+  const query = req.query || {};
+  const empresaId = req.user.role === 'supervisor' ? req.user.empresa_id : query.empresaId;
+  return { estado: query.estado, from: query.from, to: query.to, agenteId: query.agenteId, empresaId, q: query.q };
 }
 
 router.get(

@@ -12,6 +12,19 @@ function applyFilters(q, filters = {}) {
   if (filters.empresaId) {
     q.whereIn('c.agente_id', db('usuarios_sistema').select('id').where({ empresa_id: filters.empresaId }));
   }
+  // Búsqueda libre (nombre/apellido/correo/SSN) + por ID exacto — a pedido
+  // del usuario (2026-09-24), el reporte no tenía ningún buscador de texto.
+  if (filters.q) {
+    const like = `%${filters.q}%`;
+    const comoId = Number.isInteger(Number(filters.q)) ? Number(filters.q) : null;
+    q.where((b) => {
+      b.where('c.nombres', 'like', like)
+        .orWhere('c.apellidos', 'like', like)
+        .orWhere('c.correo_electronico', 'like', like)
+        .orWhere('c.social', 'like', like);
+      if (comoId !== null) b.orWhere('c.id', comoId);
+    });
+  }
   return q;
 }
 
