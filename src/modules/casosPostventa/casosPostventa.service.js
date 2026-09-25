@@ -1,5 +1,8 @@
 import { db } from '../../db/knex.js';
 import { notFound, forbidden, badRequest } from '../../utils/httpError.js';
+import { TIPO_CASO_POSTVENTA } from './casosPostventa.constants.js';
+
+const RESPONSABLE_POR_TIPO = Object.fromEntries(TIPO_CASO_POSTVENTA.map((t) => [t.valor, t.responsable]));
 
 async function logHistorialCaso(casoPostventaId, estadoAnterior, estadoNuevo, userId, motivo = null) {
   await db('historial_casos_postventa').insert({
@@ -49,6 +52,14 @@ export async function crearCaso(clienteId, user, data) {
     if (!dueño || dueño.empresa_id !== user.empresa_id) throw forbidden('Este cliente pertenece a otra empresa');
   }
 
+  // Si el tipo de caso es "de BackOffice" (ver responsable en el catálogo),
+  // nace directo escalado — a pedido del usuario (2026-09-25): "si el caso
+  // es para el backoffice, cambias el botón a 'enviar al backoffice'". Un
+  // solo movimiento en el historial (null → escalado_backoffice), no
+  // nuevo→escalado_backoffice, así no queda un paso intermedio que nadie
+  // gestionó de verdad.
+  const estadoInicial = RESPONSABLE_POR_TIPO[data.tipo_caso] === 'backoffice' ? 'escalado_backoffice' : 'nuevo';
+
   const [id] = await db('casos_postventa').insert({
     cliente_id: clienteId,
     tipo_caso: data.tipo_caso,
@@ -56,9 +67,9 @@ export async function crearCaso(clienteId, user, data) {
     observacion_inicial: data.observacion_inicial || null,
     creado_por: user.id,
     gestionado_por: user.id,
-    estado: 'nuevo',
+    estado: estadoInicial,
   });
-  await logHistorialCaso(id, null, 'nuevo', user.id);
+  await logHistorialCaso(id, null, estadoInicial, user.id);
   return getCasoDetalle(id);
 }
 
@@ -74,8 +85,9 @@ async function empresaDelCaso(caso) {
 /** admin: sin restricción. agente/backoffice: solo casos de clientes de su
  * misma empresa — defensa en profundidad además del filtro que ya aplica
  * listarCasos, para que golpear /casos-postventa/:id directo con un ID de
- * otra empresa tampoco funcione. */
-async function assertCasoAccesible(caso, user) {
+ * otra empresa tampoco funcione. Exportado: lo reusa soportesCasoPostventa
+ * (adjuntos del caso) para el mismo chequeo. */
+export async function assertCasoAccesible(caso, user) {
   if (user.role === 'admin') return;
   if (!user.empresa_id) throw forbidden('Tu cuenta no tiene una empresa asignada — pídele a un admin que la configure');
   const empresaCaso = await empresaDelCaso(caso);
@@ -158,7 +170,30 @@ export async function listarCasos(user, filters = {}) {
     q.whereIn('c.agente_id', db('usuarios_sistema').select('id').where({ empresa_id: user.empresa_id }));
   }
   if (user.role === 'backoffice') {
-    q.where('cp.estado', 'escalado_backoffice');
+    // "Postventa" (sin gestionar) = escalado_backoffice; "Gestionados" =
+    // cerrado, pero SOLO los que cerró BackOffice mismo (gest.role) — si
+    // no, se mezclarían con casos que un agente cerró directo sin escalar,
+    // que a BackOffice no le corresponden (2026-09-25, pedido del usuario:
+    // "que el backoffice en postventa no solo tenga los sin gestionar sino
+    // también los gestionados").
+    const permitidos = ['escalado_backoffice', 'cerrado'];
+    const pedidos = filters.estados?.filter((e) => permitidos.includes(e));
+    // Sin filtro explícito, el default sigue siendo solo lo pendiente (como
+    // siempre) — "cerrado" solo entra si se pide a propósito (la pestaña
+    // "Gestionados"), nunca por default.
+    const queridos = pedidos?.length ? pedidos : ['escalado_backoffice'];
+    q.andWhere((b) => {
+      let primero = true;
+      if (queridos.includes('escalado_backoffice')) {
+        b.where('cp.estado', 'escalado_backoffice');
+        primero = false;
+      }
+      if (queridos.includes('cerrado')) {
+        const clausulaCerrado = (b2) => b2.where('cp.estado', 'cerrado').andWhere('gest.role', 'backoffice');
+        if (primero) b.where(clausulaCerrado);
+        else b.orWhere(clausulaCerrado);
+      }
+    });
   } else if (filters.estados?.length) {
     q.whereIn('cp.estado', filters.estados);
   }
@@ -207,6 +242,22 @@ export async function assertCasoActivo(clienteId, role) {
     .orderBy('updated_at', 'desc')
     .first();
   if (!caso) throw forbidden('No hay un caso de postventa activo para este cliente en tu cola');
+  return caso;
+}
+
+/**
+ * Igual que assertCasoActivo, pero para UN caso puntual (por id) en vez de
+ * "algún" caso activo del cliente — lo usa soportesCasoPostventa.routes.js
+ * para subir/borrar adjuntos: un cliente puede tener varios casos a lo
+ * largo del tiempo, así que "el cliente tiene un caso activo" no alcanza
+ * para saber si ESTE caso puntual sigue siendo el activo.
+ */
+export async function assertCasoIdActivo(casoId, role) {
+  const estadosPermitidos = ESTADOS_POR_ROL[role];
+  if (!estadosPermitidos) throw forbidden('No tienes permiso para gestionar este caso');
+  const caso = await db('casos_postventa').where({ id: casoId }).first('id', 'cliente_id', 'estado');
+  if (!caso) throw notFound('Caso no encontrado');
+  if (!estadosPermitidos.includes(caso.estado)) throw forbidden('Este caso no está activo en tu cola');
   return caso;
 }
 
