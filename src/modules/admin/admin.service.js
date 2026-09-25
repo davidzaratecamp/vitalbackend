@@ -28,6 +28,19 @@ function applyFilters(q, filters = {}) {
   return q;
 }
 
+/** Mismos filtros que applyFilters, pero para casos_postventa (join propio
+ * a clientes -> agente -> empresa, ver casosPostventa.service.js). Fecha
+ * sobre cp.created_at (cuándo se abrió el caso), no sobre el cliente. */
+function applyFiltersPostventa(q, filters = {}) {
+  if (filters.from) q.where('cp.created_at', '>=', filters.from);
+  if (filters.to) q.where('cp.created_at', '<=', `${filters.to} 23:59:59`);
+  if (filters.agenteId) q.where('c.agente_id', filters.agenteId);
+  if (filters.empresaId) {
+    q.whereIn('c.agente_id', db('usuarios_sistema').select('id').where({ empresa_id: filters.empresaId }));
+  }
+  return q;
+}
+
 export async function getDashboard(filters = {}) {
   const base = () => applyFilters(db('clientes as c'), filters);
 
@@ -44,12 +57,86 @@ export async function getDashboard(filters = {}) {
     .orderBy('total', 'desc')
     .limit(20);
 
-  const tendencia = await base()
-    .select(db.raw('DATE(c.created_at) as dia'))
+  // Registros por día + aprobados por día (fecha real de la transición a
+  // 'aprobado', vía historial — no c.updated_at, que se sigue moviendo con
+  // cualquier edición de postventa después de aprobar).
+  const [tendenciaRegistros, tendenciaAprobados] = await Promise.all([
+    base()
+      .select(db.raw('DATE(c.created_at) as dia'))
+      .count({ n: '*' })
+      .groupBy(db.raw('DATE(c.created_at)'))
+      .orderBy('dia', 'asc')
+      .limit(90),
+    applyFilters(db('historial_estados_cliente as h').join('clientes as c', 'c.id', 'h.cliente_id'), filters)
+      .where('h.estado_nuevo', 'aprobado')
+      .select(db.raw('DATE(h.created_at) as dia'))
+      .count({ n: '*' })
+      .groupBy(db.raw('DATE(h.created_at)'))
+      .orderBy('dia', 'asc')
+      .limit(90),
+  ]);
+  const aprobadosPorDia = new Map(tendenciaAprobados.map((r) => [String(r.dia), Number(r.n)]));
+  const tendencia = tendenciaRegistros.map((r) => ({
+    dia: String(r.dia),
+    registros: Number(r.n),
+    aprobados: aprobadosPorDia.get(String(r.dia)) ?? 0,
+  }));
+
+  const porOrigenRows = await base().select('c.origen_venta').count({ n: '*' }).groupBy('c.origen_venta');
+
+  // Por empresa — admin ve las dos, supervisor ve la suya sola (ya forzada
+  // desde parseFilters en admin.routes.js).
+  const porEmpresaRows = await applyFilters(
+    db('clientes as c').join('usuarios_sistema as ag', 'ag.id', 'c.agente_id').leftJoin('empresas as e', 'e.id', 'ag.empresa_id'),
+    filters
+  )
+    .select('e.id as empresa_id', 'e.nombre as empresa_nombre')
+    .count({ total: 'c.id' })
+    .sum({ aprobados: db.raw("CASE WHEN c.estado = 'aprobado' THEN 1 ELSE 0 END") })
+    .groupBy('e.id', 'e.nombre');
+
+  // Aseguradoras más cotizadas (solo la versión vigente de cada plan).
+  const aseguradorasRows = await applyFilters(
+    db('planes_salud as p').join('clientes as c', 'c.id', 'p.cliente_id').join('aseguradoras as a', 'a.id', 'p.aseguradora_id'),
+    filters
+  )
+    .where('p.is_current', true)
+    .select('a.nombre as aseguradora')
+    .count({ n: 'p.id' })
+    .groupBy('a.nombre')
+    .orderBy('n', 'desc')
+    .limit(8);
+
+  // Estado de la carta CMS (FirmaCloud) — cada envío cuenta (no solo el
+  // último), filtrado por fecha de creación del cliente, igual que el
+  // resto del panel.
+  const firmasRows = await applyFilters(db('firmas_documentos as f').join('clientes as c', 'c.id', 'f.cliente_id'), filters)
+    .select('f.estado')
     .count({ n: '*' })
-    .groupBy(db.raw('DATE(c.created_at)'))
-    .orderBy('dia', 'asc')
-    .limit(90);
+    .groupBy('f.estado');
+
+  // Postventa — join propio, ver applyFiltersPostventa.
+  const [postventaPorTipoRows, postventaPorEstadoRows] = await Promise.all([
+    applyFiltersPostventa(db('casos_postventa as cp').join('clientes as c', 'c.id', 'cp.cliente_id'), filters)
+      .select('cp.tipo_caso')
+      .count({ n: '*' })
+      .groupBy('cp.tipo_caso')
+      .orderBy('n', 'desc'),
+    applyFiltersPostventa(db('casos_postventa as cp').join('clientes as c', 'c.id', 'cp.cliente_id'), filters)
+      .select('cp.estado')
+      .count({ n: '*' })
+      .groupBy('cp.estado'),
+  ]);
+
+  // Tiempo promedio hasta aprobar (días), desde que se envió a BackOffice
+  // hasta la transición real a 'aprobado' en el historial.
+  const [{ dias: diasPromedioAprobacion }] = await applyFilters(
+    db('historial_estados_cliente as h').join('clientes as c', 'c.id', 'h.cliente_id'),
+    filters
+  )
+    .where('h.estado_nuevo', 'aprobado')
+    .whereNotNull('c.submitted_at')
+    .select(db.raw('AVG(TIMESTAMPDIFF(HOUR, c.submitted_at, h.created_at)) / 24 as dias'));
 
   const total = Object.values(porEstado).reduce((s, n) => s + n, 0);
   const tasaAprobacion = total ? porEstado.aprobado / total : null;
@@ -57,6 +144,7 @@ export async function getDashboard(filters = {}) {
   return {
     total,
     tasa_aprobacion: tasaAprobacion,
+    dias_promedio_aprobacion: diasPromedioAprobacion != null ? Number(diasPromedioAprobacion) : null,
     por_estado: porEstado,
     por_agente: porAgente.map((r) => ({
       agente_id: r.agente_id,
@@ -64,7 +152,20 @@ export async function getDashboard(filters = {}) {
       total: Number(r.total),
       aprobados: Number(r.aprobados || 0),
     })),
-    tendencia: tendencia.map((r) => ({ dia: r.dia, calls: Number(r.n) })),
+    tendencia,
+    por_origen: porOrigenRows.map((r) => ({ origen_venta: r.origen_venta, total: Number(r.n) })),
+    por_empresa: porEmpresaRows.map((r) => ({
+      empresa_id: r.empresa_id,
+      empresa_nombre: r.empresa_nombre || 'Sin empresa',
+      total: Number(r.total),
+      aprobados: Number(r.aprobados || 0),
+    })),
+    aseguradoras: aseguradorasRows.map((r) => ({ aseguradora: r.aseguradora, total: Number(r.n) })),
+    firmas: firmasRows.map((r) => ({ estado: r.estado, total: Number(r.n) })),
+    postventa: {
+      por_tipo: postventaPorTipoRows.map((r) => ({ tipo_caso: r.tipo_caso, total: Number(r.n) })),
+      por_estado: postventaPorEstadoRows.map((r) => ({ estado: r.estado, total: Number(r.n) })),
+    },
   };
 }
 
