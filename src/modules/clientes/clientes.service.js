@@ -420,7 +420,18 @@ export async function getNumeroTarjetaCompleto(clienteId, userId) {
   const row = await db('informacion_pago').where({ cliente_id: clienteId }).first();
   if (!row?.numero_tarjeta_cifrado) return null;
   await db('accesos_tarjeta').insert({ cliente_id: clienteId, usuario_id: userId, tipo: 'numero_tarjeta' });
-  return { numero_tarjeta: decryptCard(row.numero_tarjeta_cifrado), marca_tarjeta: row.marca_tarjeta };
+  // "Todos los datos de la tarjeta" (2026-09-25, aclarado por el usuario) —
+  // nombre del titular y vencimiento van junto con el número, no sueltos:
+  // son los únicos campos de `informacion_pago` que no están cifrados ni
+  // son el Data Point, así que completan el cuadro sin tocar el CVV (que
+  // nunca se guarda, en ningún lado — regla dura, ver memoria del proyecto).
+  return {
+    numero_tarjeta: decryptCard(row.numero_tarjeta_cifrado),
+    marca_tarjeta: row.marca_tarjeta,
+    nombre_titular_tarjeta: row.nombre_titular_tarjeta,
+    fecha_expiracion_mes: row.fecha_expiracion_mes,
+    fecha_expiracion_ano: row.fecha_expiracion_ano,
+  };
 }
 
 /** Mismo candado que el número completo pero de un solo tramo
