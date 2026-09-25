@@ -2,6 +2,14 @@
 // Un solo lugar para no repetir la falla del original (mismo catálogo escrito
 // distinto en cada formulario).
 
+// id de la fila 'Vital Asiste' en `empresas` (ver migración
+// 20260919120000_empresas.js — Vital=1, Vital Asiste=2, fijo desde que se
+// creó la tabla). Se usa en clientes.routes.js para la regla de "ningún
+// backoffice de Vital Asiste ve datos de tarjeta salvo quien tenga permiso
+// individual" (2026-09-25, pedido del usuario) — Vital todavía no tiene
+// instrucción, sigue con su comportamiento de siempre.
+export const EMPRESA_VITAL_ASISTE_ID = 2;
+
 export const ESTATUS_MIGRATORIO = [
   'RESIDENTE',
   'CIUDADANO',

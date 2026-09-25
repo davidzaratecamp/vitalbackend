@@ -5,7 +5,7 @@ import { env } from '../../config/env.js';
 import { notFound, forbidden, conflict, badRequest } from '../../utils/httpError.js';
 import { notificarRol } from '../notificaciones/notificaciones.service.js';
 import { encryptCard, decryptCard, detectarMarca } from '../../utils/cardCrypto.js';
-import { CATEGORIA_EVIDENCIA_OBLIGATORIA, CATEGORIA_EVIDENCIA_LABEL } from './clientes.constants.js';
+import { CATEGORIA_EVIDENCIA_OBLIGATORIA, CATEGORIA_EVIDENCIA_LABEL, EMPRESA_VITAL_ASISTE_ID } from './clientes.constants.js';
 
 const EDITABLE_STATES = ['borrador', 'rechazado_backoffice'];
 
@@ -383,19 +383,52 @@ export async function getPago(clienteId) {
 }
 
 /**
- * Descifra el número completo — solo para backoffice/admin (ver la ruta) y
- * deja un registro de auditoría en `accesos_tarjeta` en cada llamada.
+ * Número completo de tarjeta: admin siempre puede. BackOffice de Vital
+ * Asiste necesita el permiso individual `puede_ver_datos_pago` — ahí
+ * NINGÚN backoffice lo ve salvo quien lo tenga (2026-09-25, pedido
+ * explícito del usuario: "ningún backoffice puede ver ningún dato de la
+ * tarjeta, solo lo podrá hacer Camila"). BackOffice de cualquier otra
+ * empresa (Vital, por ahora) sigue con el comportamiento de siempre —
+ * abierto sin restricción — todavía no hay instrucción para restringirlo
+ * también ahí ("después te doy el instructivo para Vital").
+ */
+export async function assertPuedeVerNumeroTarjeta(cliente, user) {
+  if (user.role === 'admin') return;
+  const agente = await db('usuarios_sistema').where({ id: cliente.agente_id }).first('empresa_id');
+  if (agente?.empresa_id === EMPRESA_VITAL_ASISTE_ID && !user.puede_ver_datos_pago) {
+    throw forbidden('No tienes permiso para ver el número completo de la tarjeta');
+  }
+}
+
+/**
+ * Data Point: nunca estuvo abierto a nadie (ni admin en un principio, luego
+ * ni siquiera backoffice) — a diferencia del número completo, acá NO hay
+ * empresa con comportamiento "de siempre" que preservar. Admin, o quien
+ * tenga `puede_ver_datos_pago`, sin importar la empresa — hoy solo Camila.
+ */
+export function assertPuedeVerDataPoint(user) {
+  if (user.role === 'admin') return;
+  if (!user.puede_ver_datos_pago) throw forbidden('No tienes permiso para ver el Data Point');
+}
+
+/**
+ * Descifra el número completo — el acceso ya lo validó la ruta
+ * (assertPuedeVerNumeroTarjeta) — y deja un registro de auditoría en
+ * `accesos_tarjeta` en cada llamada.
  */
 export async function getNumeroTarjetaCompleto(clienteId, userId) {
   const row = await db('informacion_pago').where({ cliente_id: clienteId }).first();
   if (!row?.numero_tarjeta_cifrado) return null;
-  await db('accesos_tarjeta').insert({ cliente_id: clienteId, usuario_id: userId });
+  await db('accesos_tarjeta').insert({ cliente_id: clienteId, usuario_id: userId, tipo: 'numero_tarjeta' });
   return { numero_tarjeta: decryptCard(row.numero_tarjeta_cifrado), marca_tarjeta: row.marca_tarjeta };
 }
 
-/** El agente nunca lo ve — solo backoffice/admin (ver la ruta). */
-export async function getDataPointCompleto(clienteId) {
+/** Mismo candado que el número completo pero de un solo tramo
+ * (assertPuedeVerDataPoint, ya validado en la ruta) — queda auditado en
+ * `accesos_tarjeta` en cada llamada. */
+export async function getDataPointCompleto(clienteId, userId) {
   const row = await db('informacion_pago').where({ cliente_id: clienteId }).first('data_point');
+  await db('accesos_tarjeta').insert({ cliente_id: clienteId, usuario_id: userId, tipo: 'data_point' });
   return { data_point: row?.data_point ?? null };
 }
 

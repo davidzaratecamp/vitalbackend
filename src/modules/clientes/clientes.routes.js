@@ -372,27 +372,29 @@ router.put(
   })
 );
 
-// Número completo descifrado — solo BackOffice/Admin, y queda auditado en
-// `accesos_tarjeta` (quién lo vio y cuándo). El agente nunca lo vuelve a ver
-// una vez guardado; solo la tarjeta enmascarada.
+// Número completo descifrado — admin siempre; backoffice según empresa y
+// permiso individual (ver assertPuedeVerNumeroTarjeta en clientes.service.js).
+// Queda auditado en `accesos_tarjeta` (quién lo vio y cuándo). El agente
+// nunca lo vuelve a ver una vez guardado; solo la tarjeta enmascarada.
 router.get(
   '/:id/pago/numero-completo',
   loadCliente,
   requireRole('backoffice', 'admin'),
   asyncHandler(async (req, res) => {
+    await svc.assertPuedeVerNumeroTarjeta(req.cliente, req.user);
     res.json((await svc.getNumeroTarjetaCompleto(req.params.id, req.user.id)) || null);
   })
 );
 
-// "Data Point" — deshabilitado para TODOS los roles por el momento, a
-// pedido del usuario (2026-09-21). requireRole() sin argumentos nunca deja
-// pasar a nadie (ni siquiera admin). Para reactivarlo: requireRole('admin').
+// "Data Point" — permiso individual siempre, en cualquier empresa (nunca
+// estuvo abierto a nadie, a diferencia del número completo).
 router.get(
   '/:id/pago/data-point',
   loadCliente,
-  requireRole(),
+  requireRole('backoffice', 'admin'),
   asyncHandler(async (req, res) => {
-    res.json(await svc.getDataPointCompleto(req.params.id));
+    svc.assertPuedeVerDataPoint(req.user);
+    res.json(await svc.getDataPointCompleto(req.params.id, req.user.id));
   })
 );
 

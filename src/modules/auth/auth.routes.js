@@ -32,6 +32,9 @@ const publicUser = (u) => ({
   role: u.role,
   avatar_color: u.avatar_color,
   empresa_id: u.empresa_id ?? null,
+  // tinyint de MySQL, no boolean — !! explícito (mismo patrón de siempre,
+  // ver bug histórico de "0" fantasma con medicare_medicaid/solicita_cobertura).
+  puede_ver_datos_pago: !!u.puede_ver_datos_pago,
 });
 
 router.post(
