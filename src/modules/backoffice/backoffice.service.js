@@ -4,6 +4,12 @@ import { getClienteOr404, logEstado, setPlanSalud, getPlanSaludActual } from '..
 import { notificar } from '../notificaciones/notificaciones.service.js';
 
 const PENDIENTE = 'pendiente_backoffice';
+const PENDIENTE_TRIPARTITA = 'pendiente_llamada_tripartita';
+// Completar/rechazar se puede hacer tanto desde la cola normal como desde
+// "pendiente llamada tripartita" — ese estado es solo una parada intermedia
+// para no confundir "ya lo gestioné, esperando la llamada" con "nadie lo ha
+// tocado todavía", no le quita a BackOffice la posibilidad de cerrarlo.
+const ESTADOS_GESTIONABLES = [PENDIENTE, PENDIENTE_TRIPARTITA];
 
 /**
  * Un backoffice solo ve/gestiona clientes de agentes de SU MISMA empresa
@@ -76,7 +82,7 @@ export async function listarCola(filters = {}, empresaId) {
 export async function completar(clienteId, userId, data, empresaId) {
   const cliente = await getClienteOr404(clienteId);
   await assertMismaEmpresa(cliente, empresaId);
-  if (cliente.estado !== PENDIENTE) throw conflict('Este cliente no está pendiente de BackOffice');
+  if (!ESTADOS_GESTIONABLES.includes(cliente.estado)) throw conflict('Este cliente no está pendiente de BackOffice');
 
   const planActual = await getPlanSaludActual(clienteId);
   if (!planActual) throw badRequest('El cliente no tiene un plan de salud cotizado por el agente');
@@ -121,7 +127,7 @@ export async function completar(clienteId, userId, data, empresaId) {
 export async function rechazar(clienteId, userId, motivo, empresaId) {
   const cliente = await getClienteOr404(clienteId);
   await assertMismaEmpresa(cliente, empresaId);
-  if (cliente.estado !== PENDIENTE) throw conflict('Este cliente no está pendiente de BackOffice');
+  if (!ESTADOS_GESTIONABLES.includes(cliente.estado)) throw conflict('Este cliente no está pendiente de BackOffice');
   await db('clientes').where({ id: clienteId }).update({ estado: 'rechazado_backoffice', updated_at: db.fn.now() });
   await logEstado(clienteId, cliente.estado, 'rechazado_backoffice', userId, motivo);
   await notificar(cliente.agente_id, {
@@ -129,5 +135,20 @@ export async function rechazar(clienteId, userId, motivo, empresaId) {
     clienteId,
     mensaje: `BackOffice rechazó a ${cliente.nombres} ${cliente.apellidos}: ${motivo}`,
   });
+  return getClienteOr404(clienteId);
+}
+
+/**
+ * Pasa un caso de "Pendiente BackOffice" a "Pendiente llamada tripartita" —
+ * BackOffice ya lo revisó pero necesita coordinar una llamada de 3 (cliente
+ * + agente + BackOffice) antes de poder aprobar o rechazar. `motivo` es
+ * opcional (queda en el historial, visible en el detalle del caso).
+ */
+export async function marcarPendienteTripartita(clienteId, userId, motivo, empresaId) {
+  const cliente = await getClienteOr404(clienteId);
+  await assertMismaEmpresa(cliente, empresaId);
+  if (cliente.estado !== PENDIENTE) throw conflict('Este cliente no está pendiente de BackOffice');
+  await db('clientes').where({ id: clienteId }).update({ estado: PENDIENTE_TRIPARTITA, updated_at: db.fn.now() });
+  await logEstado(clienteId, cliente.estado, PENDIENTE_TRIPARTITA, userId, motivo || null);
   return getClienteOr404(clienteId);
 }

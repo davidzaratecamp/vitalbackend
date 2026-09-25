@@ -43,20 +43,31 @@ export const MARCA_TARJETA = ['Visa', 'Mastercard', 'Otra'];
 // vez de una lista plana de archivos sin etiquetar, así el agente sabe
 // exactamente qué falta subir. poliza/estatus_migratorio/licencia son
 // obligatorias para poder finalizar (ver finalizar() en clientes.service.js);
-// social es la única opcional.
-export const CATEGORIA_EVIDENCIA = ['poliza', 'estatus_migratorio', 'licencia', 'social'];
+// social y carta_cms_anterior son opcionales. carta_cms_anterior se agregó
+// 2026-09-25 para postventa: cuando el cliente pide actualizar su póliza,
+// queda la carta CMS vieja guardada para poder hacer firmar la nueva
+// después (mismo Paso 7, ahora también reusado por GestionCasoPage.tsx).
+export const CATEGORIA_EVIDENCIA = ['poliza', 'estatus_migratorio', 'licencia', 'social', 'carta_cms_anterior'];
 export const CATEGORIA_EVIDENCIA_LABEL = {
   poliza: 'Póliza',
   estatus_migratorio: 'Estatus migratorio',
   licencia: 'Licencia',
   social: 'Social',
+  carta_cms_anterior: 'Carta CMS anterior',
 };
 export const CATEGORIA_EVIDENCIA_OBLIGATORIA = ['poliza', 'estatus_migratorio', 'licencia'];
 
-export const ESTADO_CLIENTE = ['borrador', 'pendiente_backoffice', 'aprobado', 'rechazado_backoffice'];
+export const ESTADO_CLIENTE = [
+  'borrador',
+  'pendiente_backoffice',
+  'pendiente_llamada_tripartita',
+  'aprobado',
+  'rechazado_backoffice',
+];
 export const ESTADO_CLIENTE_LABEL = {
   borrador: 'Borrador',
   pendiente_backoffice: 'Pendiente BackOffice',
+  pendiente_llamada_tripartita: 'Pendiente llamada tripartita',
   aprobado: 'Aprobado',
   rechazado_backoffice: 'Rechazado por BackOffice',
 };

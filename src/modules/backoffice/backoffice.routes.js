@@ -6,6 +6,7 @@ import { validate } from '../../middleware/validate.js';
 import { requireAuth, requireRole } from '../../middleware/auth.js';
 import { getClienteOr404, assertAccesoCliente, agregarObservacion } from '../clientes/clientes.service.js';
 import { ESTADO_PRIMA } from '../clientes/clientes.constants.js';
+import { fechaFiltroValida } from '../../utils/fechaFiltro.js';
 import * as svc from './backoffice.service.js';
 
 const router = Router();
@@ -20,8 +21,8 @@ router.get(
           estado: req.query.estado,
           q: req.query.q,
           agenteId: req.query.agenteId,
-          desde: req.query.desde,
-          hasta: req.query.hasta,
+          desde: fechaFiltroValida(req.query.desde),
+          hasta: fechaFiltroValida(req.query.hasta),
         },
         req.user.empresa_id
       )
@@ -53,6 +54,16 @@ router.put(
   validate(rechazarSchema),
   asyncHandler(async (req, res) => {
     res.json(await svc.rechazar(req.params.id, req.user.id, req.body.motivo, req.user.empresa_id));
+  })
+);
+
+const pendienteTripartitaSchema = z.object({ motivo: z.string().max(500).optional().nullable() });
+
+router.put(
+  '/clientes/:id/pendiente-tripartita',
+  validate(pendienteTripartitaSchema),
+  asyncHandler(async (req, res) => {
+    res.json(await svc.marcarPendienteTripartita(req.params.id, req.user.id, req.body.motivo, req.user.empresa_id));
   })
 );
 
