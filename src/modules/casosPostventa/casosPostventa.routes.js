@@ -4,6 +4,7 @@ import { asyncHandler } from '../../utils/asyncHandler.js';
 import { validate } from '../../middleware/validate.js';
 import { requireAuth, requireRole } from '../../middleware/auth.js';
 import { forbidden } from '../../utils/httpError.js';
+import { fechaFiltroValida } from '../../utils/fechaFiltro.js';
 import * as svc from './casosPostventa.service.js';
 import { TIPO_CASO_POSTVENTA_VALORES, TIPO_GESTION_POSTVENTA, ESTADO_CASO_POSTVENTA } from './casosPostventa.constants.js';
 
@@ -49,8 +50,8 @@ router.get(
         q: req.query.q,
         tipo_caso: req.query.tipo_caso,
         tipo_gestion: req.query.tipo_gestion,
-        desde: req.query.desde,
-        hasta: req.query.hasta,
+        desde: fechaFiltroValida(req.query.desde),
+        hasta: fechaFiltroValida(req.query.hasta),
       })
     );
   })

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { asyncHandler } from '../../utils/asyncHandler.js';
 import { requireAuth, requireRole } from '../../middleware/auth.js';
 import { getClienteOr404, getClienteDetalle, assertAccesoCliente } from '../clientes/clientes.service.js';
+import { fechaFiltroValida } from '../../utils/fechaFiltro.js';
 import * as svc from './admin.service.js';
 
 const router = Router();
@@ -19,7 +20,14 @@ router.use(requireAuth, requireRole('admin', 'supervisor'));
 function parseFilters(req) {
   const query = req.query || {};
   const empresaId = req.user.role === 'supervisor' ? req.user.empresa_id : query.empresaId;
-  return { estado: query.estado, from: query.from, to: query.to, agenteId: query.agenteId, empresaId, q: query.q };
+  return {
+    estado: query.estado,
+    from: fechaFiltroValida(query.from),
+    to: fechaFiltroValida(query.to),
+    agenteId: query.agenteId,
+    empresaId,
+    q: query.q,
+  };
 }
 
 router.get(
