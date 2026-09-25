@@ -149,7 +149,7 @@ router.delete(
     if (!['agente', 'supervisor', 'admin'].includes(req.user.role)) {
       throw forbidden('No tienes permiso para eliminar este registro');
     }
-    await svc.eliminarCliente(req.params.id, req.user.role);
+    await svc.eliminarCliente(req.params.id, req.user.role, req.user.id);
     res.json({ ok: true });
   })
 );
@@ -349,9 +349,16 @@ const pagoSchema = z.object({
   fecha_expiracion_ano: z.coerce.number().int().min(new Date().getFullYear()).max(2099).optional().nullable(),
   // El agente la escribe pero no la vuelve a ver (queda enmascarada
   // mientras escribe y después). Limitado a 3 caracteres (2026-09-23, a
-  // pedido del usuario) — nadie puede revelarla por el momento (ver GET
-  // /:id/pago/data-point, requireRole() sin roles).
+  // pedido del usuario). Solo quien tenga el permiso individual
+  // `puede_ver_datos_pago` puede revelarla (2026-09-25, ver GET
+  // /:id/pago/data-point).
   data_point: z.string().max(3).optional().nullable(),
+  // Datos bancarios (débito automático) — ninguno obligatorio (2026-09-26,
+  // pedido del usuario). Número de cuenta se cifra igual que la tarjeta,
+  // mismo trato: solo de ida, no se vuelve a exponer tal cual.
+  nombre_banco: z.string().max(120).optional().nullable(),
+  numero_ruta: z.string().regex(/^\d{9}$/, 'El número de ruta (routing number) tiene 9 dígitos').optional().nullable(),
+  numero_cuenta: z.string().regex(/^\d{4,17}$/, 'Debe tener entre 4 y 17 dígitos').optional().nullable(),
 });
 
 router.get(

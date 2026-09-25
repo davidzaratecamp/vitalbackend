@@ -73,8 +73,13 @@ const ESTADOS_ELIMINABLES_POR_ROL = {
  * auditoría), así que se borra aparte primero para no chocar con la FK.
  * Los archivos físicos (evidencias/soportes) se borran del disco después de
  * que la fila de la base ya se fue.
+ *
+ * Antes de borrar, deja una foto en `clientes_eliminados` — la "papelera"
+ * que ve admin (2026-09-26, pedido del usuario) — no es un soft-delete
+ * (dependientes/evidencias/etc. sí se pierden), solo un registro de
+ * auditoría de qué cliente existió y quién lo eliminó.
  */
-export async function eliminarCliente(clienteId, userRole) {
+export async function eliminarCliente(clienteId, userRole, userId) {
   const cliente = await getClienteOr404(clienteId);
   const estadosPermitidos = ESTADOS_ELIMINABLES_POR_ROL[userRole] ?? ['borrador'];
   if (!estadosPermitidos.includes(cliente.estado)) {
@@ -84,6 +89,26 @@ export async function eliminarCliente(clienteId, userRole) {
         : 'Solo se pueden eliminar registros en borrador — este ya se envió o fue gestionado.'
     );
   }
+
+  const [agente, usuario] = await Promise.all([
+    db('usuarios_sistema').where({ id: cliente.agente_id }).first('name', 'empresa_id'),
+    db('usuarios_sistema').where({ id: userId }).first('name'),
+  ]);
+  await db('clientes_eliminados').insert({
+    cliente_id_original: cliente.id,
+    nombres: cliente.nombres,
+    apellidos: cliente.apellidos,
+    social: cliente.social,
+    correo_electronico: cliente.correo_electronico,
+    phone_1: cliente.phone_1,
+    estado_previo: cliente.estado,
+    agente_id: cliente.agente_id,
+    agente_nombre: agente?.name ?? '—',
+    empresa_id: agente?.empresa_id ?? null,
+    eliminado_por: userId,
+    eliminado_por_nombre: usuario?.name ?? '—',
+    eliminado_por_rol: userRole,
+  });
 
   const archivos = [
     ...(await db('evidencias').where({ cliente_id: clienteId }).select('ruta_archivo')),
@@ -334,6 +359,9 @@ const PAGO_COLUMNS_PUBLICAS = [
   'nombre_titular_tarjeta',
   'fecha_expiracion_mes',
   'fecha_expiracion_ano',
+  'nombre_banco',
+  'numero_ruta',
+  'ultimos_4_cuenta',
   'created_at',
   'updated_at',
 ];
@@ -351,20 +379,25 @@ function pagoParaMostrar(row) {
 }
 
 /**
- * `numero_tarjeta` (si viene) se cifra acá — nunca se guarda en texto plano
- * ni se deja pasar tal cual a la fila. `ultimos_4_digitos` y `marca_tarjeta`
- * se derivan del número completo, no se aceptan sueltos. Si no viene
- * `numero_tarjeta` (ej. el agente solo corrige el nombre o el vencimiento),
- * el número ya guardado no se toca. `data_point` es texto libre (NO se
- * cifra: no es un dato de pago regulado, solo se pidió que el agente no
- * pueda volver a leerlo — ver pagoParaMostrar/getDataPointCompleto).
+ * `numero_tarjeta`/`numero_cuenta` (si vienen) se cifran acá — nunca se
+ * guardan en texto plano ni se dejan pasar tal cual a la fila.
+ * `ultimos_4_digitos`/`ultimos_4_cuenta` y `marca_tarjeta` se derivan del
+ * número completo correspondiente, no se aceptan sueltos. Si no viene
+ * alguno (ej. el agente solo corrige el nombre del banco), lo que ya
+ * estaba guardado no se toca. `data_point` es texto libre (NO se cifra: no
+ * es un dato de pago regulado, solo se pidió que el agente no pueda volver
+ * a leerlo — ver pagoParaMostrar/getDataPointCompleto).
  */
-export async function setPago(clienteId, { numero_tarjeta, ...data }) {
+export async function setPago(clienteId, { numero_tarjeta, numero_cuenta, ...data }) {
   const payload = { ...data };
   if (numero_tarjeta) {
     payload.numero_tarjeta_cifrado = encryptCard(numero_tarjeta);
     payload.marca_tarjeta = detectarMarca(numero_tarjeta);
     payload.ultimos_4_digitos = numero_tarjeta.slice(-4);
+  }
+  if (numero_cuenta) {
+    payload.numero_cuenta_cifrado = encryptCard(numero_cuenta);
+    payload.ultimos_4_cuenta = numero_cuenta.slice(-4);
   }
 
   const existing = await db('informacion_pago').where({ cliente_id: clienteId }).first();
@@ -418,19 +451,23 @@ export function assertPuedeVerDataPoint(user) {
  */
 export async function getNumeroTarjetaCompleto(clienteId, userId) {
   const row = await db('informacion_pago').where({ cliente_id: clienteId }).first();
-  if (!row?.numero_tarjeta_cifrado) return null;
+  if (!row?.numero_tarjeta_cifrado && !row?.numero_cuenta_cifrado) return null;
   await db('accesos_tarjeta').insert({ cliente_id: clienteId, usuario_id: userId, tipo: 'numero_tarjeta' });
-  // "Todos los datos de la tarjeta" (2026-09-25, aclarado por el usuario) —
-  // nombre del titular y vencimiento van junto con el número, no sueltos:
-  // son los únicos campos de `informacion_pago` que no están cifrados ni
-  // son el Data Point, así que completan el cuadro sin tocar el CVV (que
-  // nunca se guarda, en ningún lado — regla dura, ver memoria del proyecto).
+  // "Todos los datos de la tarjeta" (2026-09-25/26, aclarado por el
+  // usuario) — nombre del titular, vencimiento y ahora los datos bancarios
+  // (débito automático) van junto con el número, no sueltos: son los
+  // únicos campos de `informacion_pago` que no están cifrados o que sí lo
+  // están pero comparten el mismo permiso, así que completan el cuadro sin
+  // tocar el CVV (que nunca se guarda, en ningún lado).
   return {
-    numero_tarjeta: decryptCard(row.numero_tarjeta_cifrado),
+    numero_tarjeta: row.numero_tarjeta_cifrado ? decryptCard(row.numero_tarjeta_cifrado) : null,
     marca_tarjeta: row.marca_tarjeta,
     nombre_titular_tarjeta: row.nombre_titular_tarjeta,
     fecha_expiracion_mes: row.fecha_expiracion_mes,
     fecha_expiracion_ano: row.fecha_expiracion_ano,
+    nombre_banco: row.nombre_banco,
+    numero_ruta: row.numero_ruta,
+    numero_cuenta: row.numero_cuenta_cifrado ? decryptCard(row.numero_cuenta_cifrado) : null,
   };
 }
 

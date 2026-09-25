@@ -145,3 +145,47 @@ export async function streamReporteCsv(filters, res) {
   }
   res.end();
 }
+
+/**
+ * "Papelera" — clientes_eliminados, la foto que deja eliminarCliente() en
+ * clientes.service.js antes de borrar (2026-09-26, pedido del usuario).
+ * Ya viene desnormalizada (agente_nombre/empresa_id guardados tal cual al
+ * momento de eliminar), así que no hace falta ningún join.
+ */
+function applyFiltersPapelera(q, filters = {}) {
+  if (filters.agenteId) q.where('agente_id', filters.agenteId);
+  if (filters.empresaId) q.where('empresa_id', filters.empresaId);
+  if (filters.desde) q.where('created_at', '>=', `${filters.desde} 00:00:00`);
+  if (filters.hasta) q.where('created_at', '<=', `${filters.hasta} 23:59:59`);
+  if (filters.q) {
+    const like = `%${filters.q}%`;
+    const comoId = Number.isInteger(Number(filters.q)) ? Number(filters.q) : null;
+    q.where((b) => {
+      b.where('nombres', 'like', like)
+        .orWhere('apellidos', 'like', like)
+        .orWhere('correo_electronico', 'like', like)
+        .orWhere('social', 'like', like)
+        .orWhere('agente_nombre', 'like', like);
+      if (comoId !== null) b.orWhere('cliente_id_original', comoId);
+    });
+  }
+  return q;
+}
+
+export async function papelera(filters = {}, { page = 1, pageSize = 50 } = {}) {
+  const base = () => applyFiltersPapelera(db('clientes_eliminados'), filters);
+
+  const [{ n: total }] = await base().count({ n: 'id' });
+  const rows = await base()
+    .orderBy('created_at', 'desc')
+    .limit(pageSize)
+    .offset((page - 1) * pageSize);
+
+  return {
+    page,
+    page_size: pageSize,
+    total: Number(total),
+    total_pages: Math.ceil(Number(total) / pageSize) || 1,
+    rows,
+  };
+}

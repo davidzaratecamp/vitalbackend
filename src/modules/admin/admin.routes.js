@@ -65,4 +65,30 @@ router.get(
   })
 );
 
+// "Papelera" — solo admin, no supervisor (2026-09-26, pedido del usuario:
+// "el admin debe tener una pestaña"). requireRole('admin') acá pisa el
+// requireRole('admin', 'supervisor') general de arriba, para este único
+// endpoint.
+router.get(
+  '/papelera',
+  requireRole('admin'),
+  asyncHandler(async (req, res) => {
+    const query = req.query || {};
+    const page = Math.max(1, Number(query.page) || 1);
+    const pageSize = Math.min(200, Math.max(1, Number(query.pageSize) || 50));
+    res.json(
+      await svc.papelera(
+        {
+          q: query.q,
+          agenteId: query.agenteId,
+          empresaId: query.empresaId,
+          desde: fechaFiltroValida(query.desde),
+          hasta: fechaFiltroValida(query.hasta),
+        },
+        { page, pageSize }
+      )
+    );
+  })
+);
+
 export default router;
