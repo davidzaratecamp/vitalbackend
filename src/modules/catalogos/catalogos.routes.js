@@ -90,9 +90,14 @@ const npnProductorSchema = z.object({
   npn: z.string().max(40).optional().nullable(),
 });
 
+// Crear/editar aseguradoras y productores NPN — apagado para admin
+// (2026-09-26, pedido del usuario: "él no las coloca, cuando hay que
+// alimentarlo me dicen a mí"). requireRole() sin argumentos nunca deja
+// pasar a nadie; mismo patrón reversible que usuariosSistema.routes.js.
+// Para reactivarlo: volver a requireRole('admin') en las 4 rutas de abajo.
 router.post(
   '/npn-productores',
-  requireRole('admin'),
+  requireRole(),
   validate(npnProductorSchema),
   asyncHandler(async (req, res) => {
     const [id] = await db('npn_productores').insert({ nombre: req.body.nombre, npn: req.body.npn ?? null });
@@ -102,7 +107,7 @@ router.post(
 
 router.patch(
   '/npn-productores/:id',
-  requireRole('admin'),
+  requireRole(),
   validate(
     z.object({
       nombre: z.string().min(2).max(120).optional(),
@@ -122,7 +127,7 @@ const aseguradoraSchema = z.object({ nombre: z.string().min(2).max(80) });
 
 router.post(
   '/aseguradoras',
-  requireRole('admin'),
+  requireRole(),
   validate(aseguradoraSchema),
   asyncHandler(async (req, res) => {
     const [id] = await db('aseguradoras').insert({ nombre: req.body.nombre });
@@ -132,7 +137,7 @@ router.post(
 
 router.patch(
   '/aseguradoras/:id',
-  requireRole('admin'),
+  requireRole(),
   validate(z.object({ nombre: z.string().min(2).max(80).optional(), is_active: z.coerce.boolean().optional() })),
   asyncHandler(async (req, res) => {
     const row = await db('aseguradoras').where({ id: req.params.id }).first();
