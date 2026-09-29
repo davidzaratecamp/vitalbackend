@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { asyncHandler } from '../../utils/asyncHandler.js';
 import { validate } from '../../middleware/validate.js';
 import { requireAuth, requireRole } from '../../middleware/auth.js';
-import { forbidden } from '../../utils/httpError.js';
+import { forbidden, conflict } from '../../utils/httpError.js';
 import * as svc from './clientes.service.js';
 import * as casosPostventaSvc from '../casosPostventa/casosPostventa.service.js';
 import {
@@ -16,7 +16,7 @@ import {
   TIPO_RED,
   ESTADO_PRIMA,
   METODO_PAGO,
-  ESTADOS_POSTVENTA,
+  ESTADOS_EN_TRAMITE,
 } from './clientes.constants.js';
 
 const router = Router();
@@ -34,26 +34,35 @@ async function loadCliente(req, _res, next) {
   next();
 }
 
-// El agente tiene dos caminos (2026-09-24: "el customer es el mismo
-// agente", ya no es un rol aparte): su propio borrador/rechazado, como
-// siempre — o cualquier cliente en un estado de postventa (ESTADOS_POSTVENTA
-// — aprobado, y desde 2026-09-29 también pendiente_backoffice; suyo o de
-// otro agente de su misma empresa, `loadCliente`/assertAccesoCliente ya lo
-// dejó pasar) SI tiene un caso de postventa activo para ese cliente (ver
-// assertCasoActivo) — no alcanza con el rol solo, evita editar un cliente
-// en ese estado sin haber pasado por "Validar" antes. BackOffice: mismo
-// candado, solo mientras el caso está escalado a su cola.
+// El agente tiene dos caminos:
+// - Su PROPIO cliente: editable en cualquier estado, salvo mientras está
+//   "en trámite" con BackOffice (ESTADOS_EN_TRAMITE — pendiente_backoffice,
+//   pendiente_llamada_tripartita) — ahí sí se bloquea, para no chocar con
+//   lo que BackOffice está revisando en simultáneo. Esto incluye 'aprobado'
+//   (2026-09-29, corregido a pedido del usuario: "me dijeron que cuando
+//   estaba aprobado no era editable por parte del agente" — cierto, antes
+//   exigía además un caso de postventa activo incluso para el dueño; ya no
+//   hace falta, es su cliente).
+// - Un cliente AJENO (de otro agente, misma empresa — postventa,
+//   `loadCliente`/assertAccesoCliente ya lo dejó pasar solo si está en
+//   ESTADOS_POSTVENTA): hace falta que tenga un caso de postventa activo
+//   para ESE cliente (ver assertCasoActivo) — no alcanza con el rol solo,
+//   evita editar un cliente ajeno sin haber pasado por "Validar" antes.
+// BackOffice: mismo candado que un ajeno, solo mientras el caso está
+// escalado a su cola.
 async function assertCanEdit(req) {
   if (req.user.role === 'agente') {
-    if (req.cliente.agente_id === req.user.id && !ESTADOS_POSTVENTA.includes(req.cliente.estado)) {
-      svc.assertEditable(req.cliente);
+    if (req.cliente.agente_id === req.user.id) {
+      if (ESTADOS_EN_TRAMITE.includes(req.cliente.estado)) {
+        throw conflict('Este registro está en trámite con BackOffice — no se puede editar mientras se revisa.');
+      }
       return;
     }
-    await casosPostventaSvc.assertCasoActivo(req.cliente.id, 'agente');
+    await casosPostventaSvc.assertCasoActivo(req.cliente.id, 'agente', req.user.id);
     return;
   }
   if (req.user.role === 'backoffice') {
-    await casosPostventaSvc.assertCasoActivo(req.cliente.id, 'backoffice');
+    await casosPostventaSvc.assertCasoActivo(req.cliente.id, 'backoffice', req.user.id);
     return;
   }
   throw forbidden('No tienes permiso para editar este registro');

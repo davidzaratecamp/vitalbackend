@@ -7,10 +7,10 @@ import { db } from '../../db/knex.js';
 import { env } from '../../config/env.js';
 import { asyncHandler } from '../../utils/asyncHandler.js';
 import { requireAuth } from '../../middleware/auth.js';
-import { badRequest, notFound, forbidden } from '../../utils/httpError.js';
-import { getClienteOr404, assertAccesoCliente, assertEditable } from '../clientes/clientes.service.js';
+import { badRequest, notFound, forbidden, conflict } from '../../utils/httpError.js';
+import { getClienteOr404, assertAccesoCliente } from '../clientes/clientes.service.js';
 import { assertCasoActivo } from '../casosPostventa/casosPostventa.service.js';
-import { CATEGORIA_EVIDENCIA, ESTADOS_POSTVENTA } from '../clientes/clientes.constants.js';
+import { CATEGORIA_EVIDENCIA, ESTADOS_EN_TRAMITE } from '../clientes/clientes.constants.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -49,21 +49,25 @@ async function assertAccess(req, clienteId) {
 }
 
 // Mismo criterio que assertCanEdit en clientes.routes.js: el agente sube/
-// borra evidencia de su propio borrador/rechazado; sobre un cliente en un
-// estado de postventa (ESTADOS_POSTVENTA — suyo o de otro agente de su
-// empresa) y BackOffice, solo si tienen un caso de postventa activo para
-// ese cliente.
+// borra evidencia de su propio cliente en cualquier estado, salvo mientras
+// está "en trámite" con BackOffice (ESTADOS_EN_TRAMITE) — incluye 'aprobado'
+// desde 2026-09-29 (antes exigía un caso de postventa activo incluso para
+// el dueño, bug reportado por el usuario). Sobre un cliente AJENO (de otro
+// agente de su empresa) y BackOffice, solo si tienen un caso de postventa
+// activo para ese cliente.
 async function assertCanEditEvidencia(req, cliente) {
   if (req.user.role === 'agente') {
-    if (cliente.agente_id === req.user.id && !ESTADOS_POSTVENTA.includes(cliente.estado)) {
-      assertEditable(cliente);
+    if (cliente.agente_id === req.user.id) {
+      if (ESTADOS_EN_TRAMITE.includes(cliente.estado)) {
+        throw conflict('Este registro está en trámite con BackOffice — no se puede editar mientras se revisa.');
+      }
       return;
     }
-    await assertCasoActivo(cliente.id, 'agente');
+    await assertCasoActivo(cliente.id, 'agente', req.user.id);
     return;
   }
   if (req.user.role === 'backoffice') {
-    await assertCasoActivo(cliente.id, 'backoffice');
+    await assertCasoActivo(cliente.id, 'backoffice', req.user.id);
     return;
   }
   throw forbidden('No tienes permiso para gestionar evidencias de este registro');

@@ -70,7 +70,7 @@ router.post(
     if (req.user.role !== 'agente' && req.user.role !== 'backoffice') {
       throw forbidden('No tienes permiso para adjuntar documentos a este caso');
     }
-    await assertCasoIdActivo(req.params.casoId, req.user.role);
+    await assertCasoIdActivo(req.params.casoId, req.user.role, req.user.id);
     next();
   }),
   upload.array('archivos', env.uploads.maxFilesEvidencias),
@@ -119,7 +119,7 @@ router.delete(
     if (req.user.role !== 'agente' && req.user.role !== 'backoffice') {
       throw forbidden('No tienes permiso para eliminar documentos de este caso');
     }
-    await assertCasoIdActivo(row.caso_postventa_id, req.user.role);
+    await assertCasoIdActivo(row.caso_postventa_id, req.user.role, req.user.id);
 
     await db('soportes_caso_postventa').where({ id: row.id }).del();
     const fullPath = path.join(env.uploads.dir, row.ruta_archivo);

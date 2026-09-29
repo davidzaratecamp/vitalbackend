@@ -85,16 +85,27 @@ async function empresaDelCaso(caso) {
   return dueño?.empresa_id ?? null;
 }
 
-/** admin: sin restricción. agente/backoffice: solo casos de clientes de su
- * misma empresa — defensa en profundidad además del filtro que ya aplica
- * listarCasos, para que golpear /casos-postventa/:id directo con un ID de
- * otra empresa tampoco funcione. Exportado: lo reusa soportesCasoPostventa
- * (adjuntos del caso) para el mismo chequeo. */
+/** admin: sin restricción. agente/backoffice/supervisor: solo casos de
+ * clientes de su misma empresa — defensa en profundidad además del filtro
+ * que ya aplica listarCasos, para que golpear /casos-postventa/:id directo
+ * con un ID de otra empresa tampoco funcione. Exportado: lo reusa
+ * soportesCasoPostventa (adjuntos del caso) para el mismo chequeo.
+ *
+ * Exclusividad de BackOffice (2026-09-29, pedido del usuario): un caso en
+ * 'seguimiento_backoffice' quedó asignado a quien lo tomó (gestionado_por)
+ * — ningún OTRO backoffice de la empresa puede verlo ni gestionarlo desde
+ * acá, ni siquiera para mirarlo. Esto NO aplica a agente/admin/supervisor
+ * (ellos sí ven quién lo tomó, solo entre compañeros de BackOffice hay
+ * candado).
+ */
 export async function assertCasoAccesible(caso, user) {
   if (user.role === 'admin') return;
   if (!user.empresa_id) throw forbidden('Tu cuenta no tiene una empresa asignada — pídele a un admin que la configure');
   const empresaCaso = await empresaDelCaso(caso);
   if (empresaCaso !== user.empresa_id) throw forbidden('Este caso pertenece a otra empresa');
+  if (user.role === 'backoffice' && caso.estado === 'seguimiento_backoffice' && caso.gestionado_por !== user.id) {
+    throw forbidden('Este caso ya lo tomó otro compañero de BackOffice.');
+  }
 }
 
 export async function getCasoDetalle(casoId, user) {
@@ -168,33 +179,41 @@ export async function listarCasos(user, filters = {}) {
     .orderBy('cp.updated_at', 'desc')
     .limit(200);
 
-  if (user.role === 'backoffice' || user.role === 'agente') {
+  if (user.role === 'backoffice' || user.role === 'agente' || user.role === 'supervisor') {
     if (!user.empresa_id) throw forbidden('Tu cuenta no tiene una empresa asignada — pídele a un admin que la configure');
     q.whereIn('c.agente_id', db('usuarios_sistema').select('id').where({ empresa_id: user.empresa_id }));
   }
   if (user.role === 'backoffice') {
-    // "Postventa" (sin gestionar) = escalado_backoffice; "Gestionados" =
-    // cerrado, pero SOLO los que cerró BackOffice mismo (gest.role) — si
-    // no, se mezclarían con casos que un agente cerró directo sin escalar,
-    // que a BackOffice no le corresponden (2026-09-25, pedido del usuario:
-    // "que el backoffice en postventa no solo tenga los sin gestionar sino
-    // también los gestionados").
-    const permitidos = ['escalado_backoffice', 'cerrado'];
+    // "Postventa" (sin gestionar) = escalado_backoffice (cualquiera de la
+    // empresa la ve) + seguimiento_backoffice PERO SOLO LOS PROPIOS
+    // (2026-09-29, exclusividad pedida por el usuario: una vez que un
+    // backoffice le da "Seguimiento" a un caso, los demás compañeros ya no
+    // lo ven ni lo gestionan). "Gestionados" = cerrado, pero SOLO los que
+    // cerró BackOffice (gest.role) — si no, se mezclarían con casos que un
+    // agente cerró directo sin escalar, que a BackOffice no le corresponden
+    // (2026-09-25, pedido del usuario).
+    const permitidos = ['escalado_backoffice', 'seguimiento_backoffice', 'cerrado'];
     const pedidos = filters.estados?.filter((e) => permitidos.includes(e));
-    // Sin filtro explícito, el default sigue siendo solo lo pendiente (como
-    // siempre) — "cerrado" solo entra si se pide a propósito (la pestaña
-    // "Gestionados"), nunca por default.
-    const queridos = pedidos?.length ? pedidos : ['escalado_backoffice'];
+    // Sin filtro explícito, el default es lo pendiente: sin tomar + lo que
+    // yo mismo ya tomé — "cerrado" solo entra si se pide a propósito (la
+    // pestaña "Gestionados"), nunca por default.
+    const queridos = pedidos?.length ? pedidos : ['escalado_backoffice', 'seguimiento_backoffice'];
     q.andWhere((b) => {
       let primero = true;
-      if (queridos.includes('escalado_backoffice')) {
-        b.where('cp.estado', 'escalado_backoffice');
-        primero = false;
+      const orWhere = (clausula) => {
+        if (primero) {
+          b.where(clausula);
+          primero = false;
+        } else {
+          b.orWhere(clausula);
+        }
+      };
+      if (queridos.includes('escalado_backoffice')) orWhere((b2) => b2.where('cp.estado', 'escalado_backoffice'));
+      if (queridos.includes('seguimiento_backoffice')) {
+        orWhere((b2) => b2.where('cp.estado', 'seguimiento_backoffice').andWhere('cp.gestionado_por', user.id));
       }
       if (queridos.includes('cerrado')) {
-        const clausulaCerrado = (b2) => b2.where('cp.estado', 'cerrado').andWhere('gest.role', 'backoffice');
-        if (primero) b.where(clausulaCerrado);
-        else b.orWhere(clausulaCerrado);
+        orWhere((b2) => b2.where('cp.estado', 'cerrado').andWhere('gest.role', 'backoffice'));
       }
     });
   } else if (filters.estados?.length) {
@@ -220,12 +239,15 @@ export async function listarCasos(user, filters = {}) {
   return q;
 }
 
-// nuevo/seguimiento: lo trabaja el agente. escalado_backoffice: lo trabaja
-// BackOffice. cerrado es un estado final — no se reabre un caso, se crea
-// uno nuevo (número de caso distinto) si vuelve a llamar.
+// nuevo/seguimiento: lo trabaja el agente. seguimiento_backoffice: lo
+// trabaja BackOffice, y SOLO quien lo tomó (2026-09-29) — 'escalado_backoffice'
+// (sin tomar todavía) a propósito NO cuenta como "activo" para editar el
+// formulario del cliente: hay que darle "Seguimiento" primero. cerrado es
+// un estado final — no se reabre un caso, se crea uno nuevo (número de
+// caso distinto) si vuelve a llamar.
 const ESTADOS_POR_ROL = {
   agente: ['nuevo', 'seguimiento'],
-  backoffice: ['escalado_backoffice'],
+  backoffice: ['seguimiento_backoffice'],
 };
 
 /**
@@ -235,8 +257,13 @@ const ESTADOS_POR_ROL = {
  * Sin esto, un agente/backoffice no podría editar NINGÚN cliente aprobado
  * ajeno, ni siquiera pasando por "Validar" — así no se puede editar un
  * aprobado sin haber abierto un caso primero.
+ *
+ * `userId`: para BackOffice, además de existir el caso tiene que ser SUYO
+ * (gestionado_por) — exclusividad (2026-09-29, pedido del usuario): un
+ * compañero de BackOffice que no tomó el caso no puede editar el cliente
+ * por esta vía tampoco, aunque conozca el ID.
  */
-export async function assertCasoActivo(clienteId, role) {
+export async function assertCasoActivo(clienteId, role, userId) {
   const estadosPermitidos = ESTADOS_POR_ROL[role];
   if (!estadosPermitidos) throw forbidden('No tienes permiso para editar este registro');
   const caso = await db('casos_postventa')
@@ -245,6 +272,9 @@ export async function assertCasoActivo(clienteId, role) {
     .orderBy('updated_at', 'desc')
     .first();
   if (!caso) throw forbidden('No hay un caso de postventa activo para este cliente en tu cola');
+  if (role === 'backoffice' && caso.gestionado_por !== userId) {
+    throw forbidden('Este caso ya lo tomó otro compañero de BackOffice.');
+  }
   return caso;
 }
 
@@ -253,20 +283,26 @@ export async function assertCasoActivo(clienteId, role) {
  * "algún" caso activo del cliente — lo usa soportesCasoPostventa.routes.js
  * para subir/borrar adjuntos: un cliente puede tener varios casos a lo
  * largo del tiempo, así que "el cliente tiene un caso activo" no alcanza
- * para saber si ESTE caso puntual sigue siendo el activo.
+ * para saber si ESTE caso puntual sigue siendo el activo. Mismo chequeo de
+ * exclusividad que assertCasoActivo para BackOffice.
  */
-export async function assertCasoIdActivo(casoId, role) {
+export async function assertCasoIdActivo(casoId, role, userId) {
   const estadosPermitidos = ESTADOS_POR_ROL[role];
   if (!estadosPermitidos) throw forbidden('No tienes permiso para gestionar este caso');
-  const caso = await db('casos_postventa').where({ id: casoId }).first('id', 'cliente_id', 'estado');
+  const caso = await db('casos_postventa').where({ id: casoId }).first('id', 'cliente_id', 'estado', 'gestionado_por');
   if (!caso) throw notFound('Caso no encontrado');
   if (!estadosPermitidos.includes(caso.estado)) throw forbidden('Este caso no está activo en tu cola');
+  if (role === 'backoffice' && caso.gestionado_por !== userId) {
+    throw forbidden('Este caso ya lo tomó otro compañero de BackOffice.');
+  }
   return caso;
 }
 
+// BackOffice ya no puede cerrar directo desde 'escalado_backoffice' — tiene
+// que tomarlo primero ("Seguimiento", 2026-09-29) y desde ahí sí cerrar.
 const TRANSICIONES_VALIDAS = {
   agente: { nuevo: ['seguimiento', 'cerrado', 'escalado_backoffice'], seguimiento: ['seguimiento', 'cerrado', 'escalado_backoffice'] },
-  backoffice: { escalado_backoffice: ['escalado_backoffice', 'cerrado'] },
+  backoffice: { escalado_backoffice: ['seguimiento_backoffice'], seguimiento_backoffice: ['seguimiento_backoffice', 'cerrado'] },
 };
 
 export async function actualizarCaso(casoId, user, data) {

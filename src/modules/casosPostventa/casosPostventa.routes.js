@@ -41,7 +41,7 @@ router.post(
 
 router.get(
   '/',
-  requireRole('agente', 'backoffice', 'admin'),
+  requireRole('agente', 'backoffice', 'admin', 'supervisor'),
   asyncHandler(async (req, res) => {
     const estados = req.query.estados ? String(req.query.estados).split(',') : [];
     res.json(
@@ -59,7 +59,7 @@ router.get(
 
 router.get(
   '/:id',
-  requireRole('agente', 'backoffice', 'admin'),
+  requireRole('agente', 'backoffice', 'admin', 'supervisor'),
   asyncHandler(async (req, res) => {
     res.json(await svc.getCasoDetalle(req.params.id, req.user));
   })
@@ -67,7 +67,7 @@ router.get(
 
 router.get(
   '/:id/historial',
-  requireRole('agente', 'backoffice', 'admin'),
+  requireRole('agente', 'backoffice', 'admin', 'supervisor'),
   asyncHandler(async (req, res) => {
     res.json(await svc.getHistorialCaso(req.params.id, req.user));
   })

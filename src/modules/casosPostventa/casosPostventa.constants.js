@@ -101,11 +101,15 @@ export const TIPO_GESTION_POSTVENTA_LABEL = {
   gestion_habitual: 'Gestión habitual',
 };
 
-export const ESTADO_CASO_POSTVENTA = ['nuevo', 'seguimiento', 'cerrado', 'escalado_backoffice'];
+// 'seguimiento_backoffice' (2026-09-29, pedido del usuario): cuando un
+// backoffice toma un caso escalado ("Seguimiento"), queda asignado
+// exclusivamente a esa persona — ver assertCasoAccesible/assertCasoActivo.
+export const ESTADO_CASO_POSTVENTA = ['nuevo', 'seguimiento', 'cerrado', 'escalado_backoffice', 'seguimiento_backoffice'];
 
 export const ESTADO_CASO_POSTVENTA_LABEL = {
   nuevo: 'Nuevo',
   seguimiento: 'Seguimiento',
   cerrado: 'Cerrado',
   escalado_backoffice: 'Escalado a BackOffice',
+  seguimiento_backoffice: 'En seguimiento (BackOffice)',
 };

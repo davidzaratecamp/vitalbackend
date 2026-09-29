@@ -20,6 +20,17 @@ export const EMPRESA_VITAL_ASISTE_ID = 2;
 // fueron pedidos, se puede sumar después si hace falta.
 export const ESTADOS_POSTVENTA = ['aprobado', 'pendiente_backoffice'];
 
+// Estados en los que un cliente está "en trámite" con BackOffice — mientras
+// está acá, ni siquiera el agente DUEÑO puede tocar el formulario (evita
+// que edite datos mientras BackOffice/la llamada tripartita lo está
+// revisando en simultáneo). Todo lo demás (borrador, rechazado_backoffice,
+// y desde 2026-09-29 también aprobado) queda totalmente editable para el
+// dueño — antes 'aprobado' quedaba bloqueado también para el dueño (exigía
+// abrir un caso de postventa), reportado como bug por el usuario: "me
+// dijeron que cuando estaba aprobado no era editable por parte del
+// agente" — confirmado y corregido en assertCanEdit/assertCanEditEvidencia.
+export const ESTADOS_EN_TRAMITE = ['pendiente_backoffice', 'pendiente_llamada_tripartita'];
+
 export const ESTATUS_MIGRATORIO = [
   'RESIDENTE',
   'CIUDADANO',
