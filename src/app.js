@@ -29,6 +29,16 @@ import soportesCasoPostventaRoutes from './modules/soportesCasoPostventa/soporte
 export function createApp() {
   const app = express();
 
+  // En producción, nginx corre en el mismo host (127.0.0.1) y manda
+  // X-Forwarded-For/X-Real-IP — 'loopback' hace que Express confíe SOLO en
+  // ese salto para resolver `req.ip` (no en cualquier proxy, que sería
+  // spoofeable por cualquiera). Sin esto, `req.ip` siempre daba 127.0.0.1
+  // (la IP de nginx) en vez de la IP real del cliente — usado desde
+  // 2026-09-29 para dejar la IP de origen en la papelera de admin
+  // (clientes_eliminados.ip_origen) y de paso corrige el warning de
+  // express-rate-limit (ERR_ERL_UNEXPECTED_X_FORWARDED_FOR) en el login.
+  app.set('trust proxy', 'loopback');
+
   app.use(helmet());
   app.use(compression());
   app.use(express.json({ limit: '2mb' }));

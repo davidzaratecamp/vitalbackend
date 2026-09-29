@@ -10,7 +10,7 @@ import { requireAuth } from '../../middleware/auth.js';
 import { badRequest, notFound, forbidden } from '../../utils/httpError.js';
 import { getClienteOr404, assertAccesoCliente, assertEditable } from '../clientes/clientes.service.js';
 import { assertCasoActivo } from '../casosPostventa/casosPostventa.service.js';
-import { CATEGORIA_EVIDENCIA } from '../clientes/clientes.constants.js';
+import { CATEGORIA_EVIDENCIA, ESTADOS_POSTVENTA } from '../clientes/clientes.constants.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -49,12 +49,13 @@ async function assertAccess(req, clienteId) {
 }
 
 // Mismo criterio que assertCanEdit en clientes.routes.js: el agente sube/
-// borra evidencia de su propio borrador/rechazado; sobre un cliente ya
-// APROBADO (suyo o de otro agente de su empresa — postventa) y BackOffice,
-// solo si tienen un caso de postventa activo para ese cliente.
+// borra evidencia de su propio borrador/rechazado; sobre un cliente en un
+// estado de postventa (ESTADOS_POSTVENTA — suyo o de otro agente de su
+// empresa) y BackOffice, solo si tienen un caso de postventa activo para
+// ese cliente.
 async function assertCanEditEvidencia(req, cliente) {
   if (req.user.role === 'agente') {
-    if (cliente.agente_id === req.user.id && cliente.estado !== 'aprobado') {
+    if (cliente.agente_id === req.user.id && !ESTADOS_POSTVENTA.includes(cliente.estado)) {
       assertEditable(cliente);
       return;
     }

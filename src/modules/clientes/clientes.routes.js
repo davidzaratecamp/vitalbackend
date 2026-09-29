@@ -16,6 +16,7 @@ import {
   TIPO_RED,
   ESTADO_PRIMA,
   METODO_PAGO,
+  ESTADOS_POSTVENTA,
 } from './clientes.constants.js';
 
 const router = Router();
@@ -35,15 +36,16 @@ async function loadCliente(req, _res, next) {
 
 // El agente tiene dos caminos (2026-09-24: "el customer es el mismo
 // agente", ya no es un rol aparte): su propio borrador/rechazado, como
-// siempre — o cualquier cliente ya APROBADO (suyo o de otro agente de su
-// misma empresa, `loadCliente`/assertAccesoCliente ya lo dejó pasar) SI
-// tiene un caso de postventa activo para ese cliente (ver
-// assertCasoActivo) — no alcanza con el rol solo, evita editar un aprobado
-// sin haber pasado por "Validar" antes. BackOffice: mismo candado, solo
-// mientras el caso está escalado a su cola.
+// siempre — o cualquier cliente en un estado de postventa (ESTADOS_POSTVENTA
+// — aprobado, y desde 2026-09-29 también pendiente_backoffice; suyo o de
+// otro agente de su misma empresa, `loadCliente`/assertAccesoCliente ya lo
+// dejó pasar) SI tiene un caso de postventa activo para ese cliente (ver
+// assertCasoActivo) — no alcanza con el rol solo, evita editar un cliente
+// en ese estado sin haber pasado por "Validar" antes. BackOffice: mismo
+// candado, solo mientras el caso está escalado a su cola.
 async function assertCanEdit(req) {
   if (req.user.role === 'agente') {
-    if (req.cliente.agente_id === req.user.id && req.cliente.estado !== 'aprobado') {
+    if (req.cliente.agente_id === req.user.id && !ESTADOS_POSTVENTA.includes(req.cliente.estado)) {
       svc.assertEditable(req.cliente);
       return;
     }
@@ -137,19 +139,28 @@ router.get(
   })
 );
 
-// Eliminar — agente (el suyo: borrador o rechazado_backoffice), supervisor y
-// admin (solo borrador). BackOffice queda afuera a propósito, no le
-// corresponde. `loadCliente` ya resolvió ownership/empresa/admin vía
-// assertAccesoCliente; acá solo se filtra el rol y el propio servicio exige
-// el estado correcto para ese rol.
+// Eliminar — agente (el suyo: borrador o rechazado_backoffice), supervisor
+// (solo borrador) y admin (CUALQUIER estado, 2026-09-29, pedido del
+// usuario). BackOffice queda afuera a propósito, no le corresponde.
+// `loadCliente` ya resolvió ownership/empresa/admin vía assertAccesoCliente;
+// acá solo se filtra el rol y el propio servicio exige el estado correcto
+// para ese rol (admin sin restricción). `observacion` es libre/opcional —
+// la "huella" (quién/cuándo/dónde) sale sola de la sesión y de `req.ip`
+// (ver `trust proxy` en app.js).
+const eliminarClienteSchema = z.object({ observacion: z.string().trim().max(500).optional() }).optional();
+
 router.delete(
   '/:id',
   loadCliente,
+  validate(eliminarClienteSchema),
   asyncHandler(async (req, res) => {
     if (!['agente', 'supervisor', 'admin'].includes(req.user.role)) {
       throw forbidden('No tienes permiso para eliminar este registro');
     }
-    await svc.eliminarCliente(req.params.id, req.user.role, req.user.id);
+    await svc.eliminarCliente(req.params.id, req.user.role, req.user.id, {
+      observacion: req.body?.observacion || null,
+      ipOrigen: req.ip || null,
+    });
     res.json({ ok: true });
   })
 );

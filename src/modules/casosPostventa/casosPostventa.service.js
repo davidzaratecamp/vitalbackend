@@ -1,6 +1,7 @@
 import { db } from '../../db/knex.js';
 import { notFound, forbidden, badRequest } from '../../utils/httpError.js';
 import { TIPO_CASO_POSTVENTA } from './casosPostventa.constants.js';
+import { ESTADOS_POSTVENTA } from '../clientes/clientes.constants.js';
 
 const RESPONSABLE_POR_TIPO = Object.fromEntries(TIPO_CASO_POSTVENTA.map((t) => [t.valor, t.responsable]));
 
@@ -15,13 +16,15 @@ async function logHistorialCaso(casoPostventaId, estadoAnterior, estadoNuevo, us
 }
 
 /**
- * Busca entre clientes YA APROBADOS por cualquiera de los 3 teléfonos del
- * titular (phone_1, phone_2, whatsapp) — cónyuge/dependientes no tienen
- * teléfono propio en el modelo de datos, así que quien llame (titular,
- * cónyuge, un beneficiario) siempre matchea contra estos 3 campos del
- * mismo cliente. Mismo patrón que buscarPorTelefono en
- * clientes.service.js, pero acotado a 'aprobado' — postventa no aplica a
- * nada que siga en trámite.
+ * Busca entre clientes APROBADOS o PENDIENTES BACKOFFICE (ver
+ * ESTADOS_POSTVENTA) por cualquiera de los 3 teléfonos del titular
+ * (phone_1, phone_2, whatsapp) — cónyuge/dependientes no tienen teléfono
+ * propio en el modelo de datos, así que quien llame (titular, cónyuge, un
+ * beneficiario) siempre matchea contra estos 3 campos del mismo cliente.
+ * Mismo patrón que buscarPorTelefono en clientes.service.js. Hasta
+ * 2026-09-29 era solo 'aprobado' — se sumó 'pendiente_backoffice' a pedido
+ * del usuario (llamadas de postventa sobre ventas que aún no terminan de
+ * aprobarse).
  *
  * `empresaId`: postventa quedó integrada dentro de agente (2026-09-24,
  * "el customer es el mismo agente") — un agente solo puede validar/tomar
@@ -33,7 +36,7 @@ export async function validarTelefono(telefono, empresaId) {
   const q = db('clientes as c')
     .leftJoin('usuarios_sistema as ag', 'ag.id', 'c.agente_id')
     .select('c.id', 'c.nombres', 'c.apellidos', 'c.estado', 'c.phone_1', 'c.phone_2', 'c.whatsapp', 'ag.name as agente_nombre')
-    .where('c.estado', 'aprobado')
+    .whereIn('c.estado', ESTADOS_POSTVENTA)
     .andWhere((b) => b.where('c.phone_1', telefono).orWhere('c.phone_2', telefono).orWhere('c.whatsapp', telefono))
     .limit(5);
   if (empresaId) q.whereIn('c.agente_id', db('usuarios_sistema').select('id').where({ empresa_id: empresaId }));
@@ -43,8 +46,8 @@ export async function validarTelefono(telefono, empresaId) {
 export async function crearCaso(clienteId, user, data) {
   const cliente = await db('clientes').where({ id: clienteId }).first('id', 'estado', 'agente_id');
   if (!cliente) throw notFound('Cliente no encontrado');
-  if (cliente.estado !== 'aprobado') {
-    throw badRequest('Solo se pueden crear casos de postventa para clientes aprobados');
+  if (!ESTADOS_POSTVENTA.includes(cliente.estado)) {
+    throw badRequest('Solo se pueden crear casos de postventa para clientes aprobados o pendientes de BackOffice');
   }
   if (user.role === 'agente' && cliente.agente_id !== user.id) {
     if (!user.empresa_id) throw forbidden('Tu cuenta no tiene una empresa asignada — pídele a un admin que la configure');
