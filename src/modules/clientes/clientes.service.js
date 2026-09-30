@@ -360,7 +360,11 @@ export async function getPlanSaludHistorial(clienteId) {
 
 /* ───────────────────────── Paso 6 — Pago ───────────────────────── */
 
-const PAGO_COLUMNS_PUBLICAS = [
+// Exportado (2026-09-30): admin.service.js lo reusa para el export de
+// Excel del "Reporte consolidado" — así el export de pago nunca puede
+// listar `numero_tarjeta_cifrado`/`data_point` por accidente, una sola
+// fuente de verdad para "qué es seguro mostrar de informacion_pago".
+export const PAGO_COLUMNS_PUBLICAS = [
   'id',
   'cliente_id',
   'metodo',

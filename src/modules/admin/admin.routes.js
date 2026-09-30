@@ -65,6 +65,16 @@ router.get(
   })
 );
 
+// Export completo en Excel (.xlsx real, varias hojas — Titulares, Cónyuges,
+// Dependientes, Ingresos, Plan de salud, Pago, Evidencias) — 2026-09-30,
+// pedido del usuario: "toda la información de los formularios de ventas".
+router.get(
+  '/reporte.xlsx',
+  asyncHandler(async (req, res) => {
+    await svc.streamReporteExcel(parseFilters(req), res);
+  })
+);
+
 // "Papelera" — solo admin, no supervisor (2026-09-26, pedido del usuario:
 // "el admin debe tener una pestaña"). requireRole('admin') acá pisa el
 // requireRole('admin', 'supervisor') general de arriba, para este único
