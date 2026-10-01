@@ -1,10 +1,12 @@
 // Catálogo de "Listado Casos Postventa Vital 2026.xlsx" (compartido por el
-// usuario, 2026-09-24) — 13 tipos de caso, cada uno con su responsable
-// "de origen" (informativo: quién probablemente lo resuelva) — la
-// escalación real a BackOffice sigue siendo una acción manual del agente,
-// no algo automático por tipo. (El rol "Customer" del Excel se integró
-// dentro de "agente" el mismo día — "el customer es el mismo agente" — así
-// que `responsable: 'agente'` es el mismo grupo que antes decía 'customer'.)
+// usuario, 2026-09-24) — 13 tipos de caso originales + 2 sumados el
+// 2026-10-01 ("Notificación y paquete de bienvenida" / "Gestión 1er
+// pago"), cada uno con su responsable "de origen" (informativo: quién
+// probablemente lo resuelva) — la escalación real a BackOffice sigue
+// siendo una acción manual del agente, no algo automático por tipo. (El
+// rol "Customer" del Excel se integró dentro de "agente" el mismo día —
+// "el customer es el mismo agente" — así que `responsable: 'agente'` es el
+// mismo grupo que antes decía 'customer'.)
 
 export const TIPO_CASO_POSTVENTA = [
   {
@@ -50,6 +52,12 @@ export const TIPO_CASO_POSTVENTA = [
     descripcion: 'Cliente solicita ayuda para la aclaración de la factura.',
   },
   {
+    valor: 'notificacion_bienvenida',
+    nombre: 'Notificación y paquete de bienvenida',
+    responsable: 'agente',
+    descripcion: 'El agente notifica al cliente que su póliza quedó aprobada y le hace llegar el paquete de bienvenida.',
+  },
+  {
     valor: 'cambio_vida',
     nombre: 'Cambio de Vida',
     responsable: 'backoffice',
@@ -84,6 +92,12 @@ export const TIPO_CASO_POSTVENTA = [
     nombre: 'Gestión de Autorización Póliza',
     responsable: 'backoffice',
     descripcion: 'Se llama al cliente para solicitar código donde nos autoriza a procesarle su póliza de salud.',
+  },
+  {
+    valor: 'gestion_primer_pago',
+    nombre: 'Gestión 1er pago',
+    responsable: 'backoffice',
+    descripcion: 'BackOffice gestiona y confirma el primer pago de la póliza del cliente.',
   },
 ];
 
