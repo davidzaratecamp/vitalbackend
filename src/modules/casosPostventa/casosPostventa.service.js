@@ -1,6 +1,6 @@
 import { db } from '../../db/knex.js';
 import { notFound, forbidden, badRequest } from '../../utils/httpError.js';
-import { TIPO_CASO_POSTVENTA } from './casosPostventa.constants.js';
+import { TIPO_CASO_POSTVENTA, REASIGNACION_PREFIJO } from './casosPostventa.constants.js';
 import { ESTADOS_POSTVENTA } from '../clientes/clientes.constants.js';
 
 const RESPONSABLE_POR_TIPO = Object.fromEntries(TIPO_CASO_POSTVENTA.map((t) => [t.valor, t.responsable]));
@@ -327,5 +327,32 @@ export async function actualizarCaso(casoId, user, data) {
   }
 
   await db('casos_postventa').where({ id: casoId }).update(patch);
+  return getCasoDetalle(casoId);
+}
+
+/**
+ * Reasigna un caso ya tomado (seguimiento_backoffice) a OTRO backoffice —
+ * para cuando quien lo tenía deja de estar disponible (renuncia, cambio de
+ * equipo, vacaciones largas, etc.) y sus casos quedarían bloqueados para
+ * todo el mundo si no (exclusividad de BackOffice, ver assertCasoAccesible).
+ * No hay pantalla para esto todavía (es una operación rara, administrativa)
+ * — se usa desde un script directo, como el resto de altas/cambios de
+ * usuario en este proyecto (ver reset_pass_temp.mjs y similares). El
+ * historial queda con el prefijo REASIGNACION_PREFIJO para que el frontend
+ * lo muestre como un aviso permanente en la pantalla del caso — 2026-10-02,
+ * pedido explícito del usuario (ver comentario en casosPostventa.constants.js).
+ *
+ * `cambiadoPorUserId`: quién HIZO la reasignación (normalmente un admin vía
+ * script) — nunca el nuevo dueño, aunque sea el que más adelante va a
+ * gestionar el caso, para no dar a entender que se lo asignó él mismo.
+ */
+export async function reasignarCasoBackoffice(casoId, nuevoUserId, { motivo, cambiadoPorUserId }) {
+  const caso = await db('casos_postventa').where({ id: casoId }).first();
+  if (!caso) throw notFound('Caso no encontrado');
+  if (caso.estado !== 'seguimiento_backoffice') {
+    throw badRequest('Solo se pueden reasignar casos que estén en seguimiento_backoffice (ya tomados por alguien)');
+  }
+  await db('casos_postventa').where({ id: casoId }).update({ gestionado_por: nuevoUserId, updated_at: db.fn.now() });
+  await logHistorialCaso(casoId, caso.estado, caso.estado, cambiadoPorUserId, `${REASIGNACION_PREFIJO} ${motivo}`);
   return getCasoDetalle(casoId);
 }

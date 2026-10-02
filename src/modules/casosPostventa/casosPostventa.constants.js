@@ -127,3 +127,14 @@ export const ESTADO_CASO_POSTVENTA_LABEL = {
   escalado_backoffice: 'Escalado a BackOffice',
   seguimiento_backoffice: 'En seguimiento (BackOffice)',
 };
+
+// Prefijo que marca una entrada de historial como "reasignación de caso"
+// (2026-10-02, pedido del usuario: Camila renunció, sus casos tomados
+// pasaron a Sebastián — "no quiero que el día de mañana [el nuevo] diga:
+// eso lo gestionó [el anterior]"). El frontend busca este prefijo en el
+// historial para mostrar un aviso PERMANENTE y visible en la pantalla del
+// caso (no alcanza con que quede enterrado en el historial de abajo) — ver
+// GestionCasoPage.tsx y reasignarCasoBackoffice() en casosPostventa.service.js.
+// Si cambia este texto, cambiarlo también en casosPostventaConstants.ts
+// (frontend) — son dos archivos separados, no uno compartido.
+export const REASIGNACION_PREFIJO = '[Reasignación]';
