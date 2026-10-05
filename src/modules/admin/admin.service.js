@@ -372,7 +372,7 @@ const SECCIONES_EXCEL = [
       { header: 'Correo emergencia', key: 'contacto_emergencia_email', width: 22 },
       { header: 'Origen venta', key: 'origen_venta', width: 11 },
       { header: 'Pregunta seguridad', key: 'pregunta_seguridad', width: 19 },
-      { header: 'Solicita cobertura', key: 'solicita_cobertura', width: 13 },
+      { header: 'Enrolado', key: 'solicita_cobertura', width: 10 },
     ],
   },
   {
@@ -385,7 +385,7 @@ const SECCIONES_EXCEL = [
       { header: 'SSN', key: 'conyuge_ssn', width: 11 },
       { header: 'Fecha nac.', key: 'conyuge_fecha_nacimiento', width: 12 },
       { header: 'Estatus migratorio', key: 'conyuge_estatus_migratorio', width: 17 },
-      { header: 'Solicita cobertura', key: 'conyuge_solicita_cobertura', width: 13 },
+      { header: 'Enrolado', key: 'conyuge_solicita_cobertura', width: 10 },
       { header: 'Medicare/Medicaid', key: 'conyuge_medicare', width: 15 },
     ],
   },
@@ -395,7 +395,7 @@ const SECCIONES_EXCEL = [
     claro: 'FFFEF3C7', // amber-100
     cols: [
       { header: 'Cantidad', key: 'dependientes_cantidad', width: 9 },
-      { header: 'Detalle (nombre, parentesco, nac., SSN, estatus)', key: 'dependientes_detalle', width: 55 },
+      { header: 'Detalle (nombre, parentesco, nac., SSN, estatus, enrolado, Medicare/Medicaid)', key: 'dependientes_detalle', width: 70 },
     ],
   },
   {
@@ -489,8 +489,16 @@ function agruparPorCliente(rows) {
 
 function resumenDependientes(deps) {
   if (!deps.length) return '';
+  // Incluye explícitamente "Enrolado" (= solicita_cobertura — el campo que
+  // marca si ese dependiente/beneficiario queda bajo la póliza o no) y
+  // Medicare/Medicaid — faltaban acá (reportado por el usuario, 2026-10-05:
+  // "quien está enrolado, quien no" — sí estaba para Cónyuge, se quedó
+  // afuera del resumen de Dependientes).
   return deps
-    .map((d) => `${d.nombres} ${d.apellidos} (${d.parentesco}, nac. ${d.fecha_nacimiento}${d.social ? `, SSN ${d.social}` : ''}, ${d.estatus_migratorio})`)
+    .map(
+      (d) =>
+        `${d.nombres} ${d.apellidos} (${d.parentesco}, nac. ${d.fecha_nacimiento}${d.social ? `, SSN ${d.social}` : ''}, ${d.estatus_migratorio}, Enrolado: ${siNo(d.solicita_cobertura)}, Medicare/Medicaid: ${siNo(d.medicare_medicaid)})`
+    )
     .join(' | ');
 }
 
