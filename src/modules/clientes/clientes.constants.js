@@ -31,6 +31,15 @@ export const ESTADOS_POSTVENTA = ['aprobado', 'pendiente_backoffice'];
 // agente" — confirmado y corregido en assertCanEdit/assertCanEditEvidencia.
 export const ESTADOS_EN_TRAMITE = ['pendiente_backoffice', 'pendiente_llamada_tripartita'];
 
+// Mismo prefijo/idea que REASIGNACION_PREFIJO en casosPostventa.constants.js
+// (2026-09-29, exclusividad de BackOffice) — pero este es para reasignar la
+// VENTA completa (clientes.agente_id) a otro agente, ej. cuando el agente
+// dueño cambia de rol y deja ventas sin terminar (2026-10-05, pedido del
+// usuario). Son dos constantes separadas a propósito (dos módulos, dos
+// tablas de historial distintas) — si cambia el texto, cambiarlo en los dos
+// lados (y en el espejo del frontend, clienteConstants.ts).
+export const REASIGNACION_AGENTE_PREFIJO = '[Reasignación]';
+
 export const ESTATUS_MIGRATORIO = [
   'RESIDENTE',
   'CIUDADANO',

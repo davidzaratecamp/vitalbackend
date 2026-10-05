@@ -5,7 +5,7 @@ import { env } from '../../config/env.js';
 import { notFound, forbidden, conflict, badRequest } from '../../utils/httpError.js';
 import { notificarRol } from '../notificaciones/notificaciones.service.js';
 import { encryptCard, decryptCard, detectarMarca } from '../../utils/cardCrypto.js';
-import { CATEGORIA_EVIDENCIA_OBLIGATORIA, CATEGORIA_EVIDENCIA_LABEL, EMPRESA_VITAL_ASISTE_ID, ESTADOS_POSTVENTA } from './clientes.constants.js';
+import { CATEGORIA_EVIDENCIA_OBLIGATORIA, CATEGORIA_EVIDENCIA_LABEL, EMPRESA_VITAL_ASISTE_ID, ESTADOS_POSTVENTA, REASIGNACION_AGENTE_PREFIJO } from './clientes.constants.js';
 
 const EDITABLE_STATES = ['borrador', 'rechazado_backoffice'];
 
@@ -141,6 +141,40 @@ export async function logEstado(clienteId, estadoAnterior, estadoNuevo, userId, 
     cambiado_por: userId,
     motivo,
   });
+}
+
+/**
+ * Reasigna una venta a OTRO agente — solo admin (2026-10-05, pedido del
+ * usuario: un agente cambia de rol y deja ventas sin terminar, hay que
+ * poder moverlas a alguien que sí las pueda seguir trabajando, sin un
+ * script manual cada vez). El nuevo agente tiene que ser de la MISMA
+ * empresa que el cliente (misma separación Vital/Vital Asiste que todo lo
+ * demás en el sistema) — cruzar de empresa no tiene sentido de negocio y
+ * no hay ningún otro lugar del sistema que lo permita.
+ *
+ * Deja constancia en `historial_estados_cliente` con el prefijo
+ * REASIGNACION_AGENTE_PREFIJO (mismo patrón que
+ * reasignarCasoBackoffice en casosPostventa.service.js) — no cambia el
+ * `estado` del cliente, solo quién es el dueño.
+ */
+export async function reasignarAgente(clienteId, nuevoAgenteId, { motivo, cambiadoPorUserId }) {
+  const cliente = await getClienteOr404(clienteId);
+  const nuevoAgente = await db('usuarios_sistema').where({ id: nuevoAgenteId, role: 'agente' }).first('id', 'name', 'empresa_id', 'is_active');
+  if (!nuevoAgente) throw badRequest('El nuevo agente no existe o no tiene rol de agente');
+  if (!nuevoAgente.is_active) throw badRequest('Ese agente está desactivado');
+  if (cliente.agente_id === nuevoAgenteId) throw badRequest('Ya es el agente de esta venta');
+
+  const agenteActual = await db('usuarios_sistema').where({ id: cliente.agente_id }).first('id', 'name', 'empresa_id');
+  if (agenteActual && nuevoAgente.empresa_id !== agenteActual.empresa_id) {
+    throw badRequest('El nuevo agente tiene que ser de la misma empresa que el dueño actual de esta venta');
+  }
+
+  await db('clientes').where({ id: clienteId }).update({ agente_id: nuevoAgenteId, updated_at: db.fn.now() });
+
+  const texto = `${REASIGNACION_AGENTE_PREFIJO} De ${agenteActual?.name ?? '—'} a ${nuevoAgente.name}${motivo ? ` — ${motivo}` : ''}.`;
+  await logEstado(clienteId, cliente.estado, cliente.estado, cambiadoPorUserId, texto);
+
+  return getClienteDetalle(clienteId);
 }
 
 /* ───────────────────────── Paso 1 — Titular ───────────────────────── */
@@ -629,7 +663,9 @@ export async function listarClientes(user, filters = {}) {
 export async function getClienteDetalle(clienteId) {
   const cliente = await getClienteOr404(clienteId);
   const [agente, dependientes, ingresos, plan, pago, evidencias, historial, observacionesRows] = await Promise.all([
-    db('usuarios_sistema').select('id', 'name', 'email').where({ id: cliente.agente_id }).first(),
+    // empresa_id: lo necesita el admin en el frontend para filtrar a qué
+    // agentes puede reasignar esta venta (misma empresa, ver reasignarAgente).
+    db('usuarios_sistema').select('id', 'name', 'email', 'empresa_id').where({ id: cliente.agente_id }).first(),
     db('dependientes').where({ cliente_id: clienteId }).orderBy('id').then(normalizarDependientes),
     db('ingresos').where({ cliente_id: clienteId }),
     getPlanSaludActual(clienteId),

@@ -174,6 +174,31 @@ router.delete(
   })
 );
 
+// Reasignar la venta a otro agente — solo admin (2026-10-05, pedido del
+// usuario: un agente cambia de rol y deja ventas sin terminar). `loadCliente`
+// ya resolvió acceso vía assertAccesoCliente; acá solo se filtra el rol, el
+// propio servicio valida que el nuevo agente sea real, activo y de la misma
+// empresa que el dueño actual.
+const reasignarAgenteSchema = z.object({
+  nuevo_agente_id: z.coerce.number().int().positive(),
+  motivo: z.string().trim().max(500).optional(),
+});
+
+router.patch(
+  '/:id/reasignar',
+  loadCliente,
+  requireRole('admin'),
+  validate(reasignarAgenteSchema),
+  asyncHandler(async (req, res) => {
+    res.json(
+      await svc.reasignarAgente(req.params.id, req.body.nuevo_agente_id, {
+        motivo: req.body.motivo || null,
+        cambiadoPorUserId: req.user.id,
+      })
+    );
+  })
+);
+
 /* ───────────────────────── Paso 2 — Cónyuge ───────────────────────── */
 
 const conyugeSchema = z.object({
