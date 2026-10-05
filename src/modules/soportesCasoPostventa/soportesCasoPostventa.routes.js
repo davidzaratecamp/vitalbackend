@@ -46,7 +46,13 @@ const upload = multer({
 });
 
 async function cargarCaso(casoId) {
-  const caso = await db('casos_postventa').where({ id: casoId }).first('id', 'cliente_id', 'estado');
+  // `gestionado_por` es obligatorio acá — assertCasoAccesible lo necesita
+  // para la exclusividad de BackOffice (un caso en seguimiento_backoffice
+  // solo lo puede ver/gestionar quien lo tomó). Sin esta columna quedaba
+  // `undefined`, y la comparación `gestionado_por !== user.id` daba
+  // siempre verdadero — bloqueaba al DUEÑO real del caso al subir/ver/
+  // borrar evidencia (reportado por el usuario, 2026-10-06, con Sebastián).
+  const caso = await db('casos_postventa').where({ id: casoId }).first('id', 'cliente_id', 'estado', 'gestionado_por');
   if (!caso) throw notFound('Caso no encontrado');
   return caso;
 }

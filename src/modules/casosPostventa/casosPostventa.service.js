@@ -131,7 +131,12 @@ export async function getCasoDetalle(casoId, user) {
 }
 
 export async function getHistorialCaso(casoId, user) {
-  const caso = await db('casos_postventa').where({ id: casoId }).first('id', 'cliente_id');
+  // 'estado' y 'gestionado_por' son obligatorios acá — assertCasoAccesible
+  // los necesita para la exclusividad de BackOffice. Sin ellos quedaban
+  // `undefined` y la condición nunca se cumplía, dejando ver el historial
+  // de un caso ajeno sin que la exclusividad lo bloqueara (mismo bug raíz
+  // que el de soportesCasoPostventa.routes.js, 2026-10-06).
+  const caso = await db('casos_postventa').where({ id: casoId }).first('id', 'cliente_id', 'estado', 'gestionado_por');
   if (!caso) throw notFound('Caso no encontrado');
   await assertCasoAccesible(caso, user);
   return db('historial_casos_postventa as h')
