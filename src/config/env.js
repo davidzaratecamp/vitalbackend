@@ -44,6 +44,19 @@ export const env = {
     baseUrl: process.env.FIRMACLOUD_BASE_URL || 'https://firmahealthcare.com/api',
   },
 
+  // Aware de Vital Asiste (asiste2.awareccm.com) — de acá salen las
+  // grabaciones que se escuchan dentro de cada caso (ver
+  // src/modules/grabaciones). Opcional: sin contraseña el módulo responde
+  // "no configurado" en vez de tumbar el arranque.
+  aware: {
+    host: process.env.AWARE_DB_HOST || 'asiste2.awareccm.com',
+    port: Number(process.env.AWARE_DB_PORT || 5432),
+    database: process.env.AWARE_DB_NAME || 'awareccm',
+    user: process.env.AWARE_DB_USER || 'analista',
+    password: process.env.AWARE_DB_PASSWORD || '',
+    audioBaseUrl: process.env.AWARE_AUDIO_BASE_URL || 'https://asiste2.awareccm.com/audiofiles',
+  },
+
   seedAdmin: {
     name: process.env.SEED_ADMIN_NAME || 'Administrador Vital',
     email: process.env.SEED_ADMIN_EMAIL || 'admin@vital.local',

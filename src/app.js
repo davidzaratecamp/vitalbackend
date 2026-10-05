@@ -25,6 +25,7 @@ import notificacionesRoutes from './modules/notificaciones/notificaciones.routes
 import firmasRoutes from './modules/firmas/firmas.routes.js';
 import casosPostventaRoutes from './modules/casosPostventa/casosPostventa.routes.js';
 import soportesCasoPostventaRoutes from './modules/soportesCasoPostventa/soportesCasoPostventa.routes.js';
+import grabacionesRoutes from './modules/grabaciones/grabaciones.routes.js';
 
 export function createApp() {
   const app = express();
@@ -70,6 +71,7 @@ export function createApp() {
   app.use('/api/firmas', firmasRoutes);
   app.use('/api/casos-postventa', casosPostventaRoutes);
   app.use('/api/soportes-caso-postventa', soportesCasoPostventaRoutes);
+  app.use('/api/grabaciones', grabacionesRoutes);
 
   app.use(notFoundHandler);
   app.use(errorHandler);
