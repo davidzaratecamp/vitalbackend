@@ -461,6 +461,18 @@ const SECCIONES_EXCEL = [
       { header: 'Detalle (categoría: archivo)', key: 'evidencias_detalle', width: 45 },
     ],
   },
+  {
+    // Historial completo de la venta (2026-10-05, pedido del usuario:
+    // "quien lo tocó, si el backoffice lo rechazó, y después se corrigió y
+    // se aprobó, entre otras") — orden cronológico (primero lo más viejo),
+    // para que se lea como una historia de principio a fin. Cada estado
+    // nuevo sale coloreado igual que la columna "Estado" (ESTADO_FONT_EXCEL)
+    // para distinguir de un vistazo dónde hubo un rechazo.
+    nombre: 'HISTORIAL',
+    color: 'FF4338CA', // indigo-700
+    claro: 'FFE0E7FF', // indigo-100
+    cols: [{ header: 'Historial completo (orden cronológico)', key: 'historial_detalle', width: 70 }],
+  },
 ];
 
 // Pastel por estado de la venta, mismo lenguaje de color que ya usa el
@@ -487,24 +499,68 @@ function agruparPorCliente(rows) {
   return out;
 }
 
-function resumenDependientes(deps) {
-  if (!deps.length) return '';
-  // Incluye explícitamente "Enrolado" (= solicita_cobertura — el campo que
-  // marca si ese dependiente/beneficiario queda bajo la póliza o no) y
-  // Medicare/Medicaid — faltaban acá (reportado por el usuario, 2026-10-05:
-  // "quien está enrolado, quien no" — sí estaba para Cónyuge, se quedó
-  // afuera del resumen de Dependientes).
-  return deps
-    .map(
-      (d) =>
-        `${d.nombres} ${d.apellidos} (${d.parentesco}, nac. ${d.fecha_nacimiento}${d.social ? `, SSN ${d.social}` : ''}, ${d.estatus_migratorio}, Enrolado: ${siNo(d.solicita_cobertura)}, Medicare/Medicaid: ${siNo(d.medicare_medicaid)})`
-    )
-    .join(' | ');
+const NEUTRO_EXCEL = 'FF1E293B';
+const SEPARADOR_EXCEL = 'FF94A3B8';
+const VERDE_EXCEL = 'FF15803D';
+const ROJO_EXCEL = 'FFB91C1C';
+
+/**
+ * Texto enriquecido (varios colores dentro de la MISMA celda, vía
+ * `richText` de ExcelJS) — 2026-10-05, pedido del usuario: "María Pérez,
+ * enrolado (verde) Juan Pérez, no enrolado (rojo)", algo "más desmenuzado
+ * y segmentado" que el Sí/No suelto que había antes. Cada
+ * dependiente/beneficiario sale con su nombre en texto normal y
+ * "ENROLADO"/"NO ENROLADO" resaltado en verde o rojo, bien notorio.
+ */
+function resumenDependientesExcel(deps) {
+  if (!deps.length) return 'Sin dependientes/beneficiarios';
+  const runs = [];
+  deps.forEach((d, i) => {
+    if (i > 0) runs.push({ font: { color: { argb: SEPARADOR_EXCEL } }, text: '   |   ' });
+    runs.push({ font: { color: { argb: NEUTRO_EXCEL } }, text: `${d.nombres} ${d.apellidos} (${d.parentesco}) — ` });
+    runs.push({
+      font: { bold: true, color: { argb: d.solicita_cobertura ? VERDE_EXCEL : ROJO_EXCEL } },
+      text: d.solicita_cobertura ? 'ENROLADO' : 'NO ENROLADO',
+    });
+    runs.push({
+      font: { color: { argb: NEUTRO_EXCEL } },
+      text: ` (nac. ${d.fecha_nacimiento}${d.social ? `, SSN ${d.social}` : ''}, ${d.estatus_migratorio}${d.medicare_medicaid ? ', Medicare/Medicaid' : ''})`,
+    });
+  });
+  return { richText: runs };
 }
 
 function resumenEvidencias(evs) {
   if (!evs.length) return '';
   return evs.map((e) => `${CATEGORIA_EVIDENCIA_LABEL[e.categoria] ?? 'Otro'}: ${e.nombre_archivo}`).join(' | ');
+}
+
+/**
+ * Historial completo de la venta, en texto enriquecido — cada estado nuevo
+ * sale coloreado igual que la columna "Estado" (ESTADO_FONT_EXCEL), para
+ * ver de un vistazo en qué paso hubo, por ejemplo, un rechazo (2026-10-05,
+ * pedido del usuario: "quien lo tocó, si el backoffice lo rechazó, y
+ * después se corrigió y se aprobó, entre otras, es decir, el historial en
+ * sí"). Orden cronológico ascendente — se lee como una historia.
+ */
+function resumenHistorialExcel(hist) {
+  if (!hist.length) return 'Sin movimientos registrados';
+  const runs = [];
+  hist.forEach((h, i) => {
+    if (i > 0) runs.push({ font: { color: { argb: SEPARADOR_EXCEL } }, text: '   |   ' });
+    if (h.estado_anterior) {
+      runs.push({ font: { color: { argb: NEUTRO_EXCEL } }, text: `${ESTADO_CLIENTE_LABEL[h.estado_anterior] ?? h.estado_anterior} → ` });
+    }
+    runs.push({
+      font: { bold: true, color: { argb: ESTADO_FONT_EXCEL[h.estado_nuevo] ?? NEUTRO_EXCEL } },
+      text: ESTADO_CLIENTE_LABEL[h.estado_nuevo] ?? h.estado_nuevo,
+    });
+    runs.push({
+      font: { color: { argb: NEUTRO_EXCEL } },
+      text: ` (${h.created_at}, ${h.cambiado_por_nombre ?? '—'}${h.motivo ? `: ${h.motivo}` : ''})`,
+    });
+  });
+  return { richText: runs };
 }
 
 /** Arma el array plano de columnas para `sheet.columns` y, de paso, le
@@ -528,7 +584,7 @@ export async function streamReporteExcel(filters, res) {
   const titulares = await obtenerTitularesParaExcel(filters);
   const ids = titulares.map((c) => c.id);
 
-  const [conyuges, dependientes, ingresos, planes, pagos, evidencias, firmasRows] = ids.length
+  const [conyuges, dependientes, ingresos, planes, pagos, evidencias, firmasRows, historialRows] = ids.length
     ? await Promise.all([
         db('dependientes').where({ parentesco: 'Conyuge' }).whereIn('cliente_id', ids).orderBy('cliente_id'),
         db('dependientes').whereNot('parentesco', 'Conyuge').whereIn('cliente_id', ids).orderBy('cliente_id'),
@@ -543,8 +599,18 @@ export async function streamReporteExcel(filters, res) {
         db('informacion_pago').select(PAGO_COLUMNS_PUBLICAS).whereIn('cliente_id', ids).orderBy('cliente_id'),
         db('evidencias').whereIn('cliente_id', ids).orderBy(['cliente_id', 'id']),
         db('firmas_documentos').select('cliente_id', 'estado', 'canal', 'enviado_at', 'firmado_at').whereIn('cliente_id', ids).orderBy('created_at', 'desc'),
+        // Historial completo (2026-10-05, pedido del usuario: "quien lo
+        // tocó, si el backoffice lo rechazó, y después se corrigió y se
+        // aprobó, entre otras, es decir, el historial en sí") — orden
+        // cronológico ascendente (lo más viejo primero), para que se lea
+        // como una historia de principio a fin.
+        db('historial_estados_cliente as h')
+          .leftJoin('usuarios_sistema as u', 'u.id', 'h.cambiado_por')
+          .select('h.cliente_id', 'h.estado_anterior', 'h.estado_nuevo', 'h.motivo', 'h.created_at', 'u.name as cambiado_por_nombre')
+          .whereIn('h.cliente_id', ids)
+          .orderBy('h.created_at', 'asc'),
       ])
-    : [[], [], [], [], [], [], []];
+    : [[], [], [], [], [], [], [], []];
 
   // Última firma por cliente — firmasRows viene ordenado desc, nos quedamos
   // con la primera aparición de cada cliente_id.
@@ -556,6 +622,7 @@ export async function streamReporteExcel(filters, res) {
   const depsPorCliente = agruparPorCliente(dependientes);
   const ingresosPorCliente = agruparPorCliente(ingresos);
   const evidenciasPorCliente = agruparPorCliente(evidencias);
+  const historialPorCliente = agruparPorCliente(historialRows);
 
   const wb = new ExcelJS.Workbook();
   wb.creator = 'Vital';
@@ -613,6 +680,7 @@ export async function streamReporteExcel(filters, res) {
     const conyuge = conyugePorCliente[c.id];
     const deps = depsPorCliente[c.id] ?? [];
     const evs = evidenciasPorCliente[c.id] ?? [];
+    const hist = historialPorCliente[c.id] ?? [];
     const ingresosCliente = ingresosPorCliente[c.id] ?? [];
     const ingresoTitular = ingresosCliente.find((i) => !i.dependiente_id);
     const totalFamilia = ingresosCliente.reduce((s, i) => s + Number(i.ingresos_anuales || 0), 0);
@@ -658,7 +726,7 @@ export async function streamReporteExcel(filters, res) {
       conyuge_medicare: conyuge ? siNo(conyuge.medicare_medicaid) : '',
 
       dependientes_cantidad: deps.length,
-      dependientes_detalle: resumenDependientes(deps),
+      dependientes_detalle: resumenDependientesExcel(deps),
 
       ingresos_declaracion: ingresoTitular?.tipo_declaracion ?? '',
       ingresos_anuales_titular: ingresoTitular?.ingresos_anuales ?? '',
@@ -692,6 +760,8 @@ export async function streamReporteExcel(filters, res) {
 
       evidencias_cantidad: evs.length,
       evidencias_detalle: resumenEvidencias(evs),
+
+      historial_detalle: resumenHistorialExcel(hist),
     });
 
     // Cebrado suave + un borde de color al inicio de cada sección, para
@@ -702,7 +772,10 @@ export async function streamReporteExcel(filters, res) {
       for (let c2 = sec.inicio; c2 <= sec.fin; c2 += 1) {
         const cell = row.getCell(c2);
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: esPar ? 'FFF8FAFC' : 'FFFFFFFF' } };
-        cell.alignment = { vertical: 'middle', wrapText: c2 === sec.fin && (sec.nombre === 'DEPENDIENTES' || sec.nombre === 'EVIDENCIAS') };
+        cell.alignment = {
+          vertical: 'middle',
+          wrapText: c2 === sec.fin && ['DEPENDIENTES', 'EVIDENCIAS', 'HISTORIAL'].includes(sec.nombre),
+        };
         if (c2 === sec.inicio) cell.border = { left: { style: 'medium', color: { argb: sec.color } } };
       }
     }
@@ -711,6 +784,21 @@ export async function streamReporteExcel(filters, res) {
     const estadoCell = row.getCell('estado');
     estadoCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: ESTADO_FILL_EXCEL[c.estado] ?? 'FFF1F5F9' } };
     estadoCell.font = { bold: true, color: { argb: ESTADO_FONT_EXCEL[c.estado] ?? 'FF475569' } };
+    estadoCell.alignment = { horizontal: 'center', vertical: 'middle' };
+
+    // "Enrolado" del titular y del cónyuge (celda de un solo valor, no
+    // texto enriquecido como Dependientes) — mismo verde/rojo pedido por
+    // el usuario, pisando el cebrado igual que Estado.
+    const enroladoTitularCell = row.getCell('solicita_cobertura');
+    enroladoTitularCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: c.solicita_cobertura ? 'FFDCFCE7' : 'FFFEE2E2' } };
+    enroladoTitularCell.font = { bold: true, color: { argb: c.solicita_cobertura ? VERDE_EXCEL : ROJO_EXCEL } };
+    enroladoTitularCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    if (conyuge) {
+      const enroladoConyugeCell = row.getCell('conyuge_solicita_cobertura');
+      enroladoConyugeCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: conyuge.solicita_cobertura ? 'FFDCFCE7' : 'FFFEE2E2' } };
+      enroladoConyugeCell.font = { bold: true, color: { argb: conyuge.solicita_cobertura ? VERDE_EXCEL : ROJO_EXCEL } };
+      enroladoConyugeCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    }
     estadoCell.alignment = { horizontal: 'center', vertical: 'middle' };
 
     rowIndex += 1;
