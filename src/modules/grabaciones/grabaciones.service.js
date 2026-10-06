@@ -67,44 +67,115 @@ export async function contextoCasoPostventa(caso) {
 }
 
 /**
- * Llamadas contestadas y con grabación del agente a esos teléfonos.
- * `registroId` restringe a una sola llamada (para validar el audio).
+ * Llamadas grabadas del agente a esos teléfonos, desde el CDR de la central
+ * (cdr_custom), no solo desde registro_llamada: Aware deja en
+ * registro_llamada un único registro por contacto de la base (el último
+ * intento) y los intentos anteriores — contestados y grabados, a veces de más
+ * de una hora — solo existen en el CDR (2026-10-06, ~40% de las llamadas).
+ *
+ * Se incluye todo lo que está en registro_llamada más los intentos no
+ * registrados que fueron contestados. El agente de cada llamada: el de
+ * registro_llamada, el del CDR, o el de la extensión (la llamada registrada
+ * más cercana en el tiempo desde esa extensión ese día). `uniqueid`
+ * restringe a una sola llamada (para validar el audio).
  */
-export async function listarLlamadas(ctx, registroId = null) {
+export async function listarLlamadas(ctx, uniqueid = null) {
   const telefonos = [...new Set(ctx.telefonos.map(normPhone).filter((p) => p.length === 10))];
   if (!ctx.cedula || !telefonos.length) {
     return { llamadas: [], motivo: !ctx.cedula ? 'El agente del caso no tiene cédula registrada' : 'El cliente no tiene teléfonos válidos' };
   }
 
-  const params = [ctx.cedula, telefonos];
+  const params = [telefonos];
   let filtroId = '';
-  if (registroId != null) {
-    params.push(Number(registroId));
-    filtroId = `AND registro_llamada_id = $${params.length}`;
+  if (uniqueid != null) {
+    params.push(String(uniqueid));
+    filtroId = `AND cu.uniqueid = $${params.length}`;
   }
 
-  const { rows } = await getPool().query(
-    `SELECT registro_llamada_id, proyecto_id,
-            registro_llamada_fecha::text AS fecha, registro_llamada_hora::text AS hora,
-            registro_llamada_fono AS telefono, time_speaking AS duracion, audiofile,
-            json_data->>'proyecto_name' AS campana
-     FROM registro_llamada
-     WHERE agente_id = $1
-       AND right(regexp_replace(registro_llamada_fono, '\\D', '', 'g'), 10) = ANY($2::text[])
-       AND time_speaking > 0
-       AND audiofile IS NOT NULL
-       ${filtroId}
-     ORDER BY registro_llamada_fecha DESC, registro_llamada_hora DESC
-     LIMIT 100`,
+  const pool = getPool();
+  const { rows } = await pool.query(
+    `WITH base AS (
+       SELECT DISTINCT ON (cu.uniqueid)
+              cu.uniqueid, cu.registro_llamada_id, cu.call_start, cu.billsec, cu.audiofile, cu.telefono,
+              NULLIF(cu.agente_id, '') AS cdr_agente, NULLIF(cu.proyecto_id, 0) AS cdr_proyecto,
+              split_part(CASE WHEN cu.context = 'aware-cola-inbound' THEN cu.dstchannel ELSE cu.channel END, '-', 1) AS ext
+       FROM cdr_custom cu
+       WHERE right(regexp_replace(cu.telefono, '\\D', '', 'g'), 10) = ANY($1::text[])
+         AND (cu.disposition = 'ANSWERED' OR cu.registro_llamada_id IS NOT NULL)
+         AND cu.billsec > 0 AND COALESCE(cu.audiofile, '') <> ''
+         AND cu.context IN ('racodialer-asistido', 'aware-cola-inbound')
+         ${filtroId}
+       ORDER BY cu.uniqueid, (cu.registro_llamada_id IS NOT NULL) DESC, cu.id DESC
+     )
+     SELECT b.uniqueid, b.billsec AS duracion, b.audiofile, b.telefono, b.cdr_agente, b.ext,
+            b.call_start::text AS inicio, (b.registro_llamada_id IS NOT NULL) AS registrada,
+            COALESCE(b.cdr_proyecto, (SELECT MAX(ca.proyecto_id) FROM cdr_aware ca WHERE ca.uniqueid = b.uniqueid AND ca.proyecto_id > 0)) AS proyecto_id,
+            rl.agente_id AS rl_agente
+     FROM base b
+     LEFT JOIN registro_llamada rl ON rl.registro_llamada_id = b.registro_llamada_id
+     ORDER BY b.call_start DESC
+     LIMIT 200`,
     params
   );
 
+  // Agente por extensión para las llamadas que no lo traen.
+  const sinAgente = rows.filter((r) => !r.rl_agente && !r.cdr_agente);
+  const anclas = new Map();
+  if (sinAgente.length) {
+    const fechas = [...new Set(sinAgente.map((r) => r.inicio.slice(0, 10)))];
+    const { rows: a } = await pool.query(
+      `SELECT split_part(CASE WHEN context = 'aware-cola-inbound' THEN dstchannel ELSE channel END, '-', 1) AS ext,
+              agente_id, call_start::text AS inicio
+       FROM cdr_custom WHERE agente_id <> '' AND call_start::date = ANY($1::date[])`,
+      [fechas]
+    );
+    for (const x of a) {
+      if (!anclas.has(x.ext)) anclas.set(x.ext, []);
+      anclas.get(x.ext).push(x);
+    }
+  }
+  const ms = (inicio) => new Date(inicio.replace(' ', 'T')).getTime();
+  const agentePorExtension = (r) => {
+    let mejor = null;
+    for (const a of anclas.get(r.ext) || []) {
+      if (a.inicio.slice(0, 10) !== r.inicio.slice(0, 10)) continue;
+      if (!mejor || Math.abs(ms(a.inicio) - ms(r.inicio)) < Math.abs(ms(mejor.inicio) - ms(r.inicio))) mejor = a;
+    }
+    return mejor?.agente_id || null;
+  };
+
+  const propias = rows.filter((r) => (r.rl_agente || r.cdr_agente || agentePorExtension(r)) === ctx.cedula);
+  const campanas = await nombresCampana(pool);
+
   return {
     // `audiofile` no sale al navegador — el audio siempre pasa por el backend.
-    llamadas: rows.map(({ audiofile, ...r }) => ({ ...r, agente: ctx.agenteNombre })),
-    audiofiles: Object.fromEntries(rows.map((r) => [r.registro_llamada_id, r.audiofile])),
+    llamadas: propias.map((r) => ({
+      uniqueid: r.uniqueid,
+      proyecto_id: r.proyecto_id,
+      campana: campanas.get(Number(r.proyecto_id)) || null,
+      fecha: r.inicio.slice(0, 10),
+      hora: r.inicio.slice(11, 19),
+      telefono: r.telefono,
+      duracion: r.duracion,
+      registrada: r.registrada,
+      agente: ctx.agenteNombre,
+    })),
+    audiofiles: Object.fromEntries(propias.map((r) => [r.uniqueid, r.audiofile])),
     motivo: null,
   };
+}
+
+// Nombre de cada campaña (json_data.proyecto_name de registro_llamada) — no
+// cambia en el día, se cachea por proceso.
+let campanasCache = null;
+async function nombresCampana(pool) {
+  if (campanasCache && Date.now() - campanasCache.at < 60 * 60 * 1000) return campanasCache.map;
+  const { rows } = await pool.query(
+    `SELECT DISTINCT ON (proyecto_id) proyecto_id, json_data->>'proyecto_name' AS nombre
+     FROM registro_llamada WHERE json_data->>'proyecto_name' IS NOT NULL ORDER BY proyecto_id, registro_llamada_id DESC`
+  );
+  campanasCache = { at: Date.now(), map: new Map(rows.map((r) => [Number(r.proyecto_id), r.nombre])) };
+  return campanasCache.map;
 }
 
 function descargar(url) {
@@ -128,9 +199,9 @@ function descargar(url) {
  * convierte al vuelo con el ffmpeg empaquetado (el servidor no tiene ffmpeg
  * del sistema), sin archivos temporales.
  */
-export async function enviarAudio(ctx, registroId, res) {
-  const { audiofiles } = await listarLlamadas(ctx, registroId);
-  const audiofile = audiofiles?.[Number(registroId)];
+export async function enviarAudio(ctx, uniqueid, res) {
+  const { audiofiles } = await listarLlamadas(ctx, uniqueid);
+  const audiofile = audiofiles?.[String(uniqueid)];
   if (!audiofile) throw notFound('Esa grabación no pertenece a este caso');
 
   const origen = await descargar(`${env.aware.audioBaseUrl}/${audiofile}.WAV`);
@@ -160,7 +231,7 @@ export async function enviarAudio(ctx, registroId, res) {
   res.set({
     'Content-Type': 'audio/mpeg',
     'Content-Length': mp3.length,
-    'Content-Disposition': `inline; filename="llamada-${Number(registroId)}.mp3"`,
+    'Content-Disposition': `inline; filename="llamada-${String(uniqueid).replace(/[^0-9.]/g, '')}.mp3"`,
   });
   res.send(mp3);
 }

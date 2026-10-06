@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { asyncHandler } from '../../utils/asyncHandler.js';
+import { badRequest } from '../../utils/httpError.js';
 import { requireAuth, requireRole } from '../../middleware/auth.js';
 import { getClienteOr404, assertAccesoCliente } from '../clientes/clientes.service.js';
 import { getCasoDetalle } from '../casosPostventa/casosPostventa.service.js';
@@ -29,13 +30,15 @@ const listar = (getCtx) => asyncHandler(async (req, res) => {
   res.json({ llamadas, motivo });
 });
 
+// `uniqueid` = id de la llamada en la central de Aware (ej. "1791225214.14890").
 const audio = (getCtx) => asyncHandler(async (req, res) => {
-  await enviarAudio(await getCtx(req), req.params.registroId, res);
+  if (!/^[0-9.]{5,40}$/.test(req.params.uniqueid)) throw badRequest('Identificador de llamada inválido');
+  await enviarAudio(await getCtx(req), req.params.uniqueid, res);
 });
 
 router.get('/cliente/:clienteId', listar(ctxCliente));
-router.get('/cliente/:clienteId/audio/:registroId', audio(ctxCliente));
+router.get('/cliente/:clienteId/audio/:uniqueid', audio(ctxCliente));
 router.get('/caso-postventa/:casoId', listar(ctxCaso));
-router.get('/caso-postventa/:casoId/audio/:registroId', audio(ctxCaso));
+router.get('/caso-postventa/:casoId/audio/:uniqueid', audio(ctxCaso));
 
 export default router;
