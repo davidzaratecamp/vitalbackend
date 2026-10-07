@@ -839,10 +839,16 @@ export async function streamReporteExcel(filters, res) {
     labelCell.font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } };
     labelCell.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
 
+    // Fusiona Personas enroladas + Creado + Enviado a BackOffice (el resto
+    // de la sección Identificación) para que el texto tenga espacio de
+    // sobra — antes era solo el número suelto ("76"), sin nada al lado que
+    // dijera qué era, fácil de pasarlo por alto (reportado por el usuario,
+    // 2026-10-07: "no la veo").
+    sh.mergeCells(rowIndex, colEnrolados, rowIndex, identSec.fin);
     const enroladosCell = sh.getCell(rowIndex, colEnrolados);
-    enroladosCell.value = totalPersonasEnroladas;
+    enroladosCell.value = `Personas enroladas (todas las pólizas): ${totalPersonasEnroladas}`;
     enroladosCell.font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } };
-    enroladosCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    enroladosCell.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
 
     for (const sec of SECCIONES_EXCEL) {
       for (let c2 = sec.inicio; c2 <= sec.fin; c2 += 1) {
