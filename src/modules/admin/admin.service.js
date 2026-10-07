@@ -479,6 +479,21 @@ const SECCIONES_EXCEL = [
     claro: 'FFE0E7FF', // indigo-100
     cols: [{ header: 'Historial completo (orden cronológico)', key: 'historial_detalle', width: 70 }],
   },
+  {
+    // Mismos dos datos de la fila de totales (pólizas y personas
+    // enroladas), pero repetidos AL FINAL de cada fila como números puros
+    // (2026-10-07, pedido del usuario) — para poder seleccionar la columna
+    // en Excel y que la suma salga sola en la barra de estado, o armar un
+    // subtotal filtrando por agente/estado/etc. sin tener que ir a leer el
+    // texto de la fila de totales.
+    nombre: 'RESUMEN',
+    color: 'FF3F3F46', // zinc-700
+    claro: 'FFE4E4E7', // zinc-200
+    cols: [
+      { header: 'Póliza (cuenta 1)', key: 'resumen_poliza', width: 14 },
+      { header: 'Personas enroladas', key: 'resumen_enrolados', width: 16 },
+    ],
+  },
 ];
 
 // Pastel por estado de la venta, mismo lenguaje de color que ya usa el
@@ -775,6 +790,9 @@ export async function streamReporteExcel(filters, res) {
       evidencias_detalle: resumenEvidencias(evs),
 
       historial_detalle: resumenHistorialExcel(hist),
+
+      resumen_poliza: 1,
+      resumen_enrolados: personasEnroladas,
     });
 
     // Cebrado suave + un borde de color al inicio de cada sección, para
@@ -817,6 +835,16 @@ export async function streamReporteExcel(filters, res) {
     const enroladosCell = row.getCell('personas_enroladas');
     enroladosCell.font = { bold: true };
     enroladosCell.alignment = { horizontal: 'center', vertical: 'middle' };
+
+    // Mismos dos valores, repetidos al final de la fila como números
+    // puros — para sumarlos/filtrarlos directo en Excel (2026-10-07,
+    // pedido del usuario).
+    const resumenPolizaCell = row.getCell('resumen_poliza');
+    resumenPolizaCell.font = { bold: true };
+    resumenPolizaCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    const resumenEnroladosCell = row.getCell('resumen_enrolados');
+    resumenEnroladosCell.font = { bold: true };
+    resumenEnroladosCell.alignment = { horizontal: 'center', vertical: 'middle' };
 
     rowIndex += 1;
   }
