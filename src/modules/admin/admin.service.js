@@ -341,6 +341,12 @@ const SECCIONES_EXCEL = [
       { header: 'Estado', key: 'estado', width: 24 },
       { header: 'Agente', key: 'agente_nombre', width: 22 },
       { header: 'Empresa', key: 'empresa_nombre', width: 13 },
+      // Cada ID/caso es UNA póliza (2026-10-07, pedido del usuario) — esta
+      // columna cuenta cuántas personas quedan enroladas bajo ESA póliza:
+      // titular + cónyuge + dependientes, pero SOLO los que de verdad
+      // tienen solicita_cobertura=true, no todos los que existen en el
+      // grupo familiar.
+      { header: 'Personas enroladas', key: 'personas_enroladas', width: 16 },
       { header: 'Creado', key: 'created_at', width: 17 },
       { header: 'Enviado a BackOffice', key: 'submitted_at', width: 17 },
     ],
@@ -673,6 +679,7 @@ export async function streamReporteExcel(filters, res) {
   sh.autoFilter = { from: { row: 2, column: 1 }, to: { row: 2, column: SECCIONES_EXCEL.at(-1).fin } };
 
   let rowIndex = 3;
+  let totalPersonasEnroladas = 0; // para la fila de totales al final
   for (const c of titulares) {
     const plan = planPorCliente[c.id];
     const pago = pagoPorCliente[c.id];
@@ -681,6 +688,11 @@ export async function streamReporteExcel(filters, res) {
     const deps = depsPorCliente[c.id] ?? [];
     const evs = evidenciasPorCliente[c.id] ?? [];
     const hist = historialPorCliente[c.id] ?? [];
+    const personasEnroladas =
+      (c.solicita_cobertura ? 1 : 0) +
+      (conyuge?.solicita_cobertura ? 1 : 0) +
+      deps.filter((d) => d.solicita_cobertura).length;
+    totalPersonasEnroladas += personasEnroladas;
     const ingresosCliente = ingresosPorCliente[c.id] ?? [];
     const ingresoTitular = ingresosCliente.find((i) => !i.dependiente_id);
     const totalFamilia = ingresosCliente.reduce((s, i) => s + Number(i.ingresos_anuales || 0), 0);
@@ -690,6 +702,7 @@ export async function streamReporteExcel(filters, res) {
       estado: ESTADO_CLIENTE_LABEL[c.estado] ?? c.estado,
       agente_nombre: c.agente_nombre,
       empresa_nombre: c.empresa_nombre,
+      personas_enroladas: personasEnroladas,
       created_at: c.created_at,
       submitted_at: c.submitted_at,
 
@@ -801,7 +814,43 @@ export async function streamReporteExcel(filters, res) {
     }
     estadoCell.alignment = { horizontal: 'center', vertical: 'middle' };
 
+    const enroladosCell = row.getCell('personas_enroladas');
+    enroladosCell.font = { bold: true };
+    enroladosCell.alignment = { horizontal: 'center', vertical: 'middle' };
+
     rowIndex += 1;
+  }
+
+  // Fila de totales (2026-10-07, pedido del usuario: "la cantidad de
+  // pólizas en total... y la cantidad en número de las personas
+  // enroladas") — cada fila de arriba ES una póliza (un ID/caso = una
+  // póliza), así que el total de pólizas es simplemente cuántos titulares
+  // entraron en el export. Franja oscura de punta a punta para que se lea
+  // como un cierre, no como una fila de datos más.
+  if (titulares.length) {
+    const identSec = SECCIONES_EXCEL[0];
+    const colLabelDesde = identSec.inicio;
+    const colLabelHasta = identSec.inicio + 3; // ID, Estado, Agente, Empresa
+    const colEnrolados = identSec.inicio + 4; // Personas enroladas
+
+    sh.mergeCells(rowIndex, colLabelDesde, rowIndex, colLabelHasta);
+    const labelCell = sh.getCell(rowIndex, colLabelDesde);
+    labelCell.value = `TOTAL: ${titulares.length} póliza${titulares.length === 1 ? '' : 's'}`;
+    labelCell.font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } };
+    labelCell.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+
+    const enroladosCell = sh.getCell(rowIndex, colEnrolados);
+    enroladosCell.value = totalPersonasEnroladas;
+    enroladosCell.font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } };
+    enroladosCell.alignment = { horizontal: 'center', vertical: 'middle' };
+
+    for (const sec of SECCIONES_EXCEL) {
+      for (let c2 = sec.inicio; c2 <= sec.fin; c2 += 1) {
+        const cell = sh.getCell(rowIndex, c2);
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
+      }
+    }
+    sh.getRow(rowIndex).height = 24;
   }
 
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
