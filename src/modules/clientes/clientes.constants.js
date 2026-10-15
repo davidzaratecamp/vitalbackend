@@ -15,10 +15,12 @@ export const EMPRESA_VITAL_ASISTE_ID = 2;
 // assertAccesoCliente/assertCanEdit en clientes; assertCanEditEvidencia en
 // evidencias). Hasta 2026-09-29 era solo 'aprobado' — el usuario pidió
 // sumar 'pendiente_backoffice' (un cliente que llama mientras su venta
-// sigue en trámite en BackOffice, no solo después de aprobada). A propósito
-// NO incluye 'pendiente_llamada_tripartita' ni 'rechazado_backoffice' — no
-// fueron pedidos, se puede sumar después si hace falta.
-export const ESTADOS_POSTVENTA = ['aprobado', 'pendiente_backoffice'];
+// sigue en trámite en BackOffice, no solo después de aprobada). El
+// 2026-10-15 se sumó también 'pendiente_llamada_tripartita' (agentes
+// creándole casos a BackOffice mientras la venta espera esa llamada). A
+// propósito NO incluye 'rechazado_backoffice' — no fue pedido, se puede
+// sumar después si hace falta.
+export const ESTADOS_POSTVENTA = ['aprobado', 'pendiente_backoffice', 'pendiente_llamada_tripartita'];
 
 // Estados en los que un cliente está "en trámite" con BackOffice — mientras
 // está acá, ni siquiera el agente DUEÑO puede tocar el formulario (evita

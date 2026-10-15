@@ -16,15 +16,17 @@ async function logHistorialCaso(casoPostventaId, estadoAnterior, estadoNuevo, us
 }
 
 /**
- * Busca entre clientes APROBADOS o PENDIENTES BACKOFFICE (ver
- * ESTADOS_POSTVENTA) por cualquiera de los 3 teléfonos del titular
- * (phone_1, phone_2, whatsapp) — cónyuge/dependientes no tienen teléfono
- * propio en el modelo de datos, así que quien llame (titular, cónyuge, un
- * beneficiario) siempre matchea contra estos 3 campos del mismo cliente.
- * Mismo patrón que buscarPorTelefono en clientes.service.js. Hasta
- * 2026-09-29 era solo 'aprobado' — se sumó 'pendiente_backoffice' a pedido
- * del usuario (llamadas de postventa sobre ventas que aún no terminan de
- * aprobarse).
+ * Busca entre clientes en algún estado de ESTADOS_POSTVENTA (aprobado,
+ * pendiente_backoffice, pendiente_llamada_tripartita) por cualquiera de
+ * los 3 teléfonos del titular (phone_1, phone_2, whatsapp) —
+ * cónyuge/dependientes no tienen teléfono propio en el modelo de datos,
+ * así que quien llame (titular, cónyuge, un beneficiario) siempre matchea
+ * contra estos 3 campos del mismo cliente. Mismo patrón que
+ * buscarPorTelefono en clientes.service.js. Hasta 2026-09-29 era solo
+ * 'aprobado' — se sumó 'pendiente_backoffice' (llamadas de postventa sobre
+ * ventas que aún no terminan de aprobarse) y el 2026-10-15
+ * 'pendiente_llamada_tripartita' (agentes creándole casos a BackOffice
+ * mientras la venta espera esa llamada), ambos a pedido del usuario.
  *
  * `empresaId`: postventa quedó integrada dentro de agente (2026-09-24,
  * "el customer es el mismo agente") — un agente solo puede validar/tomar
@@ -47,7 +49,7 @@ export async function crearCaso(clienteId, user, data) {
   const cliente = await db('clientes').where({ id: clienteId }).first('id', 'estado', 'agente_id');
   if (!cliente) throw notFound('Cliente no encontrado');
   if (!ESTADOS_POSTVENTA.includes(cliente.estado)) {
-    throw badRequest('Solo se pueden crear casos de postventa para clientes aprobados o pendientes de BackOffice');
+    throw badRequest('Solo se pueden crear casos de postventa para clientes aprobados, pendientes de BackOffice o pendientes de llamada tripartita');
   }
   if (user.role === 'agente' && cliente.agente_id !== user.id) {
     if (!user.empresa_id) throw forbidden('Tu cuenta no tiene una empresa asignada — pídele a un admin que la configure');
