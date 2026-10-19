@@ -57,6 +57,31 @@ router.get(
   })
 );
 
+// Export a Excel — ANTES de '/:id', si no Express toma "export.xlsx" como
+// un id de caso (mismo cuidado que 'verificar-duplicado' en
+// clientes.routes.js). Mismos filtros y misma visibilidad por rol que la
+// tabla de la pantalla, porque por debajo es el mismo listarCasos()
+// (2026-10-19, pedido del usuario).
+router.get(
+  '/export.xlsx',
+  requireRole('agente', 'backoffice', 'admin', 'supervisor'),
+  asyncHandler(async (req, res) => {
+    const estados = req.query.estados ? String(req.query.estados).split(',') : [];
+    await svc.streamCasosPostventaExcel(
+      req.user,
+      {
+        estados,
+        q: req.query.q,
+        tipo_caso: req.query.tipo_caso,
+        tipo_gestion: req.query.tipo_gestion,
+        desde: fechaFiltroValida(req.query.desde),
+        hasta: fechaFiltroValida(req.query.hasta),
+      },
+      res
+    );
+  })
+);
+
 router.get(
   '/:id',
   requireRole('agente', 'backoffice', 'admin', 'supervisor'),

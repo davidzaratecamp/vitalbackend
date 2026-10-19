@@ -1,6 +1,13 @@
+import ExcelJS from 'exceljs';
 import { db } from '../../db/knex.js';
 import { notFound, forbidden, badRequest } from '../../utils/httpError.js';
-import { TIPO_CASO_POSTVENTA, REASIGNACION_PREFIJO } from './casosPostventa.constants.js';
+import {
+  TIPO_CASO_POSTVENTA,
+  TIPO_CASO_POSTVENTA_LABEL,
+  TIPO_GESTION_POSTVENTA_LABEL,
+  ESTADO_CASO_POSTVENTA_LABEL,
+  REASIGNACION_PREFIJO,
+} from './casosPostventa.constants.js';
 import { ESTADOS_POSTVENTA } from '../clientes/clientes.constants.js';
 
 const RESPONSABLE_POR_TIPO = Object.fromEntries(TIPO_CASO_POSTVENTA.map((t) => [t.valor, t.responsable]));
@@ -362,4 +369,154 @@ export async function reasignarCasoBackoffice(casoId, nuevoUserId, { motivo, cam
   await db('casos_postventa').where({ id: casoId }).update({ gestionado_por: nuevoUserId, updated_at: db.fn.now() });
   await logHistorialCaso(casoId, caso.estado, caso.estado, cambiadoPorUserId, `${REASIGNACION_PREFIJO} ${motivo}`);
   return getCasoDetalle(casoId);
+}
+
+/* ───────────────────── Export de Postventa (Excel) ─────────────────────
+ * (2026-10-19, pedido del usuario: "habilitarme un Export en el apartado
+ * de Postventa"). Reusa listarCasos() a propósito — así el export respeta
+ * EXACTAMENTE la misma visibilidad por rol que la pantalla: un agente solo
+ * su empresa, BackOffice su cola + lo que él mismo tomó (exclusividad),
+ * admin todo, supervisor su empresa. No hay forma de exportar algo que no
+ * se podría ver en la tabla.
+ */
+const COLORES_EXCEL_POSTVENTA = {
+  cabecera: 'FF4338CA', // indigo-700
+  cabeceraClara: 'FFE0E7FF', // indigo-100
+  neutro: 'FF1E293B',
+  separador: 'FF94A3B8',
+  cebra: 'FFF8FAFC',
+};
+
+// Mismo lenguaje de color que ESTADO_CASO_POSTVENTA_COLOR del frontend.
+const ESTADO_CASO_FILL = {
+  nuevo: 'FFE0E7FF',
+  seguimiento: 'FFFEF3C7',
+  escalado_backoffice: 'FFF3E8FF',
+  seguimiento_backoffice: 'FFE0F2FE',
+  cerrado: 'FFDCFCE7',
+};
+const ESTADO_CASO_FONT = {
+  nuevo: 'FF4338CA',
+  seguimiento: 'FFB45309',
+  escalado_backoffice: 'FF7E22CE',
+  seguimiento_backoffice: 'FF0369A1',
+  cerrado: 'FF15803D',
+};
+
+/** Historial de un caso como texto enriquecido: cada estado nuevo con su
+ * color, en orden cronológico, con quién lo movió y el motivo si lo hubo —
+ * mismo criterio que el historial del reporte de ventas. */
+function historialCasoRichText(hist) {
+  if (!hist.length) return 'Sin movimientos registrados';
+  const runs = [];
+  hist.forEach((h, i) => {
+    if (i > 0) runs.push({ font: { color: { argb: COLORES_EXCEL_POSTVENTA.separador } }, text: '   |   ' });
+    if (h.estado_anterior) {
+      runs.push({
+        font: { color: { argb: COLORES_EXCEL_POSTVENTA.neutro } },
+        text: `${ESTADO_CASO_POSTVENTA_LABEL[h.estado_anterior] ?? h.estado_anterior} → `,
+      });
+    }
+    runs.push({
+      font: { bold: true, color: { argb: ESTADO_CASO_FONT[h.estado_nuevo] ?? COLORES_EXCEL_POSTVENTA.neutro } },
+      text: ESTADO_CASO_POSTVENTA_LABEL[h.estado_nuevo] ?? h.estado_nuevo,
+    });
+    runs.push({
+      font: { color: { argb: COLORES_EXCEL_POSTVENTA.neutro } },
+      text: ` (${h.created_at}, ${h.cambiado_por_nombre ?? '—'}${h.motivo ? `: ${h.motivo}` : ''})`,
+    });
+  });
+  return { richText: runs };
+}
+
+export async function streamCasosPostventaExcel(user, filters, res) {
+  const casos = await listarCasos(user, filters);
+  const ids = casos.map((c) => c.id);
+
+  const historialRows = ids.length
+    ? await db('historial_casos_postventa as h')
+        .leftJoin('usuarios_sistema as u', 'u.id', 'h.cambiado_por')
+        .select('h.caso_postventa_id', 'h.estado_anterior', 'h.estado_nuevo', 'h.motivo', 'h.created_at', 'u.name as cambiado_por_nombre')
+        .whereIn('h.caso_postventa_id', ids)
+        .orderBy('h.created_at', 'asc')
+    : [];
+  const historialPorCaso = {};
+  for (const h of historialRows) (historialPorCaso[h.caso_postventa_id] ??= []).push(h);
+
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'Vital';
+  wb.created = new Date();
+  const sh = wb.addWorksheet('Postventa', { pageSetup: { orientation: 'landscape' } });
+
+  const COLS = [
+    { header: 'ID', key: 'id', width: 9 },
+    { header: 'Nombre cliente', key: 'cliente', width: 30 },
+    { header: 'Tipo de caso', key: 'tipo_caso', width: 34 },
+    { header: 'Estado', key: 'estado', width: 24 },
+    { header: 'Gestión', key: 'tipo_gestion', width: 18 },
+    { header: 'Gestionado por', key: 'gestionado_por', width: 26 },
+    { header: 'Última actualización', key: 'updated_at', width: 19 },
+    { header: 'Historial del caso', key: 'historial', width: 90 },
+  ];
+  sh.columns = COLS.map((c) => ({ key: c.key, width: c.width }));
+
+  COLS.forEach((c, i) => {
+    const cell = sh.getCell(1, i + 1);
+    cell.value = c.header;
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COLORES_EXCEL_POSTVENTA.cabecera } };
+    cell.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
+    cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
+    cell.border = { bottom: { style: 'medium', color: { argb: COLORES_EXCEL_POSTVENTA.cabeceraClara } } };
+  });
+  sh.getRow(1).height = 26;
+  // Congela el encabezado + ID/cliente, para no perder de vista de quién es
+  // cada fila al desplazarse hacia el historial (que es muy ancho).
+  sh.views = [{ state: 'frozen', xSplit: 2, ySplit: 1 }];
+  sh.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: COLS.length } };
+
+  let rowIndex = 2;
+  for (const c of casos) {
+    const row = sh.addRow({
+      id: c.id,
+      cliente: `${c.nombres ?? ''} ${c.apellidos ?? ''}`.trim(),
+      tipo_caso: TIPO_CASO_POSTVENTA_LABEL[c.tipo_caso] ?? c.tipo_caso,
+      estado: ESTADO_CASO_POSTVENTA_LABEL[c.estado] ?? c.estado,
+      tipo_gestion: c.tipo_gestion ? (TIPO_GESTION_POSTVENTA_LABEL[c.tipo_gestion] ?? c.tipo_gestion) : '',
+      gestionado_por: c.gestionado_por_nombre ?? '',
+      updated_at: c.updated_at,
+      historial: historialCasoRichText(historialPorCaso[c.id] ?? []),
+    });
+
+    const esPar = rowIndex % 2 === 0;
+    for (let col = 1; col <= COLS.length; col += 1) {
+      const cell = row.getCell(col);
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: esPar ? COLORES_EXCEL_POSTVENTA.cebra : 'FFFFFFFF' } };
+      cell.alignment = { vertical: 'middle', wrapText: col === COLS.length };
+    }
+    // Estado con su propio color, pisando el cebrado.
+    const estadoCell = row.getCell('estado');
+    estadoCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: ESTADO_CASO_FILL[c.estado] ?? 'FFF1F5F9' } };
+    estadoCell.font = { bold: true, color: { argb: ESTADO_CASO_FONT[c.estado] ?? 'FF475569' } };
+    estadoCell.alignment = { horizontal: 'center', vertical: 'middle' };
+
+    rowIndex += 1;
+  }
+
+  // Cierre con el total de casos exportados.
+  if (casos.length) {
+    sh.mergeCells(rowIndex, 1, rowIndex, 2);
+    const totalCell = sh.getCell(rowIndex, 1);
+    totalCell.value = `TOTAL: ${casos.length} caso${casos.length === 1 ? '' : 's'}`;
+    totalCell.font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } };
+    totalCell.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+    for (let col = 1; col <= COLS.length; col += 1) {
+      sh.getCell(rowIndex, col).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
+    }
+    sh.getRow(rowIndex).height = 24;
+  }
+
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="postventa_vital_${Date.now()}.xlsx"`);
+  await wb.xlsx.write(res);
+  res.end();
 }
