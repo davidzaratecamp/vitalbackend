@@ -64,7 +64,11 @@ router.get(
 // (2026-10-19, pedido del usuario).
 router.get(
   '/export.xlsx',
-  requireRole('agente', 'backoffice', 'admin', 'supervisor'),
+  // Sin 'agente' a propósito (2026-10-19, pedido del usuario) — el export
+  // queda para quien supervisa/gestiona: admin, supervisor y BackOffice
+  // (este último solo saca su cola + lo que él mismo tomó, igual que su
+  // pantalla). El agente ve su tabla pero no se la lleva en archivo.
+  requireRole('backoffice', 'admin', 'supervisor'),
   asyncHandler(async (req, res) => {
     const estados = req.query.estados ? String(req.query.estados).split(',') : [];
     await svc.streamCasosPostventaExcel(
