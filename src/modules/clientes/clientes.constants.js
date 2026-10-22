@@ -42,6 +42,8 @@ export const ESTADOS_EN_TRAMITE = ['pendiente_backoffice', 'pendiente_llamada_tr
 // lados (y en el espejo del frontend, clienteConstants.ts).
 export const REASIGNACION_AGENTE_PREFIJO = '[Reasignación]';
 
+// Lo que el agente puede ELEGIR hoy en el formulario — y lo único que
+// acepta Zod. Espejo en frontend/src/lib/clienteConstants.ts.
 export const ESTATUS_MIGRATORIO = [
   'RESIDENTE',
   'CIUDADANO',
@@ -50,11 +52,23 @@ export const ESTATUS_MIGRATORIO = [
   'VISA DE TRABAJO',
   'ASILO/REFUGIADO',
   'ASILO/POLITICO',
-  'PAROLE HUMANITARIO',
   'TPS',
   'GREEN CARD',
   'I-220A',
+  'I-797 (PROCESO PERMISO DE TRABAJO)',
+  'I-797 (PROCESO RESIDENCIA)',
 ];
+
+// Valores que salieron del catálogo pero siguen vivos en la base porque hay
+// registros viejos guardados con ellos ('PAROLE HUMANITARIO' se retiró el
+// 2026-10-22 a pedido del usuario, y el cliente 175 de producción lo tiene).
+// El ENUM de la columna es la UNIÓN de los dos arrays (ver la migración
+// 20261022100000_estatus_migratorio_i797.js): así nadie lo puede volver a
+// elegir y ningún dato histórico se pierde ni se trunca en el ALTER. Cuando
+// esos registros se corrijan, sacarlo de acá y estrechar el ENUM.
+export const ESTATUS_MIGRATORIO_HISTORICOS = ['PAROLE HUMANITARIO'];
+
+export const ESTATUS_MIGRATORIO_DB = [...ESTATUS_MIGRATORIO, ...ESTATUS_MIGRATORIO_HISTORICOS];
 
 export const SEXO = ['Masculino', 'Femenino'];
 

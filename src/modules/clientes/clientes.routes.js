@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { asyncHandler } from '../../utils/asyncHandler.js';
 import { validate } from '../../middleware/validate.js';
+import { mayus } from '../../utils/mayusculas.js';
 import { requireAuth, requireRole } from '../../middleware/auth.js';
 import { forbidden, conflict } from '../../utils/httpError.js';
 import * as svc from './clientes.service.js';
@@ -72,29 +73,35 @@ async function assertCanEdit(req) {
 
 const titularSchema = z.object({
   solicita_cobertura: z.coerce.boolean().optional().default(false),
-  nombres: z.string().min(2).max(120),
-  apellidos: z.string().min(2).max(120),
+  nombres: mayus(z.string().min(2).max(120)),
+  apellidos: mayus(z.string().min(2).max(120)),
   sexo: z.enum(SEXO),
   fecha_nacimiento: fecha,
   social: soloDigitos(9),
   estatus_migratorio: z.enum(ESTATUS_MIGRATORIO),
-  direccion: z.string().min(3).max(200),
-  tipo_vivienda: z.string().max(60).optional().nullable(),
+  direccion: mayus(z.string().min(3).max(200)),
+  tipo_vivienda: mayus(z.string().max(60).optional().nullable()),
+  // estado_us y ciudad salen de un catálogo fijo, no se escriben — no van en
+  // mayúsculas (ver utils/mayusculas.js).
   estado_us: z.string().min(2).max(60),
-  condado: z.string().min(2).max(80),
+  condado: mayus(z.string().min(2).max(80)),
   ciudad: z.string().min(2).max(80),
   codigo_postal: soloDigitos(5),
   correo_electronico: z.string().email().max(190),
   phone_1: z.string().min(7).max(20),
   phone_2: z.string().max(20).optional().nullable(),
   whatsapp: z.string().max(20).optional().nullable(),
-  horario_contactabilidad: z.string().max(120).optional().nullable(),
-  contacto_emergencia_nombre: z.string().max(120).optional().nullable(),
+  horario_contactabilidad: mayus(z.string().max(120).optional().nullable()),
+  // Correo del contacto de emergencia: retirado del formulario (2026-10-22,
+  // pedido del usuario). No está declarado acá, así que Zod lo descarta en
+  // silencio aunque alguien lo mande directo por API — misma técnica que
+  // `taxes` en el plan de salud. La columna `contacto_emergencia_email`
+  // queda intacta en la base (24 registros reales ya la tenían llena).
+  contacto_emergencia_nombre: mayus(z.string().max(120).optional().nullable()),
   contacto_emergencia_telefono: z.string().max(20).optional().nullable(),
-  contacto_emergencia_email: z.string().email().max(190).optional().nullable().or(z.literal('')),
   origen_venta: z.enum(ORIGEN_VENTA),
-  pregunta_seguridad: z.string().min(2).max(160),
-  respuesta_seguridad: z.string().min(2).max(160),
+  pregunta_seguridad: mayus(z.string().min(2).max(160)),
+  respuesta_seguridad: mayus(z.string().min(2).max(160)),
 });
 
 router.post(
@@ -205,8 +212,8 @@ const conyugeSchema = z.object({
   no_tiene: z.coerce.boolean().optional().default(false),
   solicita_cobertura: z.coerce.boolean().optional().default(false),
   medicare_medicaid: z.coerce.boolean().optional().default(false),
-  nombres: z.string().min(2).max(120).optional(),
-  apellidos: z.string().min(2).max(120).optional(),
+  nombres: mayus(z.string().min(2).max(120).optional()),
+  apellidos: mayus(z.string().min(2).max(120).optional()),
   sexo: z.enum(SEXO).optional(),
   fecha_nacimiento: fecha.optional(),
   social: soloDigitos(9).optional().nullable(),
@@ -237,8 +244,8 @@ const dependienteSchema = z.object({
   parentesco: z.enum(PARENTESCO.filter((p) => p !== 'Conyuge')).default('Hijo'),
   solicita_cobertura: z.coerce.boolean().optional().default(false),
   medicare_medicaid: z.coerce.boolean().optional().default(false),
-  nombres: z.string().min(2).max(120),
-  apellidos: z.string().min(2).max(120),
+  nombres: mayus(z.string().min(2).max(120)),
+  apellidos: mayus(z.string().min(2).max(120)),
   sexo: z.enum(SEXO),
   fecha_nacimiento: fecha,
   social: soloDigitos(9).optional().nullable(),
@@ -328,7 +335,7 @@ router.put(
 
 const planSaludSchema = z.object({
   aseguradora_id: z.coerce.number().int().positive(),
-  nombre_plan: z.string().min(2).max(160),
+  nombre_plan: mayus(z.string().min(2).max(160)),
   tipo_metal: z.enum(TIPO_METAL),
   tipo_red: z.enum(TIPO_RED),
   deducible: z.coerce.number().min(0).optional().nullable(),
@@ -338,7 +345,7 @@ const planSaludSchema = z.object({
   // inventar un valor solo para poder guardar, lo que dejaba la carta con
   // la prima equivocada.
   valor_prima: z.coerce.number().min(0),
-  npn: z.string().max(40).optional().nullable(),
+  npn: mayus(z.string().max(40).optional().nullable()),
   estado_prima: z.enum(ESTADO_PRIMA).optional().nullable(),
   // taxes: retirado a pedido del usuario (2026-09-22) — ya ningún agente
   // lo digita ni ningún rol lo ve. Al no estar declarado acá, Zod lo
@@ -349,9 +356,9 @@ const planSaludSchema = z.object({
   // plataforma (ej. "Sin cargo por visita desde el día 1", "50% coaseguro
   // después del deducible") — texto libre, no un número limpio, aunque la
   // API de FirmaCloud los pida como "numérico".
-  pd: z.string().max(120).optional().nullable(),
-  sd: z.string().max(120).optional().nullable(),
-  gd: z.string().max(120).optional().nullable(),
+  pd: mayus(z.string().max(120).optional().nullable()),
+  sd: mayus(z.string().max(120).optional().nullable()),
+  gd: mayus(z.string().max(120).optional().nullable()),
   // A qué productor (catálogo `npn_productores`) pertenece el NPN de esta
   // venta — independiente del campo `npn` de texto libre de BackOffice.
   npn_productor_id: z.coerce.number().int().positive().optional().nullable(),
@@ -389,7 +396,7 @@ const pagoSchema = z.object({
   // solo corrige el vencimiento), el número ya guardado no se toca. Los
   // últimos 4 dígitos y la marca se derivan de este, no se aceptan sueltos.
   numero_tarjeta: z.string().regex(/^\d{13,19}$/, 'Debe tener entre 13 y 19 dígitos').optional().nullable(),
-  nombre_titular_tarjeta: z.string().max(120).optional().nullable(),
+  nombre_titular_tarjeta: mayus(z.string().max(120).optional().nullable()),
   fecha_expiracion_mes: z.coerce.number().int().min(1).max(12).optional().nullable(),
   fecha_expiracion_ano: z.coerce.number().int().min(new Date().getFullYear()).max(2099).optional().nullable(),
   // El agente la escribe pero no la vuelve a ver (queda enmascarada
@@ -401,7 +408,7 @@ const pagoSchema = z.object({
   // Datos bancarios (débito automático) — ninguno obligatorio (2026-09-26,
   // pedido del usuario). Número de cuenta se cifra igual que la tarjeta,
   // mismo trato: solo de ida, no se vuelve a exponer tal cual.
-  nombre_banco: z.string().max(120).optional().nullable(),
+  nombre_banco: mayus(z.string().max(120).optional().nullable()),
   numero_ruta: z.string().regex(/^\d{9}$/, 'El número de ruta (routing number) tiene 9 dígitos').optional().nullable(),
   numero_cuenta: z.string().regex(/^\d{4,17}$/, 'Debe tener entre 4 y 17 dígitos').optional().nullable(),
 });

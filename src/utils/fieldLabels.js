@@ -24,7 +24,6 @@ export const FIELD_LABELS = {
   whatsapp: 'WhatsApp',
   contacto_emergencia_nombre: 'Nombre del contacto de emergencia',
   contacto_emergencia_telefono: 'Teléfono del contacto de emergencia',
-  contacto_emergencia_email: 'Correo del contacto de emergencia',
   origen_venta: 'Origen de la venta',
   pregunta_seguridad: 'Pregunta de seguridad',
   respuesta_seguridad: 'Respuesta de seguridad',

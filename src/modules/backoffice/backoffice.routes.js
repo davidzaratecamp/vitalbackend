@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { db } from '../../db/knex.js';
 import { asyncHandler } from '../../utils/asyncHandler.js';
 import { validate } from '../../middleware/validate.js';
+import { mayus } from '../../utils/mayusculas.js';
 import { requireAuth, requireRole } from '../../middleware/auth.js';
 import { getClienteOr404, assertAccesoCliente, agregarObservacion } from '../clientes/clientes.service.js';
 import { ESTADO_PRIMA } from '../clientes/clientes.constants.js';
@@ -32,10 +33,13 @@ router.get(
 
 const completarSchema = z.object({
   aseguradora_id: z.coerce.number().int().positive(),
-  nombre_plan: z.string().min(2).max(160),
+  // Mismos campos del plan que llena el agente en el Paso 5, así que mismo
+  // trato: en MAYÚSCULAS (ver utils/mayusculas.js). Los motivos y las
+  // observaciones de más abajo NO — son texto narrativo.
+  nombre_plan: mayus(z.string().min(2).max(160)),
   deducible: z.coerce.number().min(0),
   gasto_max_bolsillo: z.coerce.number().min(0),
-  npn: z.string().min(1).max(40),
+  npn: mayus(z.string().min(1).max(40)),
   estado_prima: z.enum(ESTADO_PRIMA),
 });
 
