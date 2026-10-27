@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { db } from '../../db/knex.js';
+import { registrarCambios, registrarAltaBaja } from './historialCambios.js';
 import { env } from '../../config/env.js';
 import { notFound, forbidden, conflict, badRequest } from '../../utils/httpError.js';
 import { notificarRol } from '../notificaciones/notificaciones.service.js';
@@ -232,10 +233,24 @@ export async function crearCliente(agenteId, data) {
   return getClienteOr404(id);
 }
 
-export async function actualizarTitular(id, data) {
+export async function actualizarTitular(id, data, userId) {
   await assertSocialCorreoDisponibles(data, id);
+  // Se lee ANTES del update para poder comparar: así queda en
+  // `historial_cambios_cliente` qué campo se tocó y con qué valor estaba
+  // (2026-10-27, pedido del usuario para las renovaciones — ver
+  // historialCambios.js). `data` y no `payload`: interesa el campo que
+  // mandó el formulario, no la columna cifrada que termina en la base.
+  const antes = await getClienteOr404(id);
   const payload = cifrarRespuesta({ ...data, updated_at: db.fn.now() });
   await db('clientes').where({ id }).update(payload);
+  await registrarCambios({
+    clienteId: id,
+    seccion: 'titular',
+    antes,
+    despues: data,
+    userId,
+    estado: antes.estado,
+  });
   return getClienteOr404(id);
 }
 
@@ -261,19 +276,49 @@ function normalizarDependientes(rows) {
 
 /* ───────────────────────── Paso 2 — Cónyuge ───────────────────────── */
 
-export async function setConyuge(clienteId, data) {
+export async function setConyuge(clienteId, data, userId) {
+  const { estado } = await getClienteOr404(clienteId);
   const existing = await db('dependientes').where({ cliente_id: clienteId, parentesco: 'Conyuge' }).first();
   if (data.no_tiene) {
-    if (existing) await db('dependientes').where({ id: existing.id }).del();
+    if (existing) {
+      await db('dependientes').where({ id: existing.id }).del();
+      await registrarAltaBaja({
+        clienteId,
+        seccion: 'conyuge',
+        referenciaId: existing.id,
+        tipo: 'baja',
+        descripcion: `${existing.nombres} ${existing.apellidos}`,
+        userId,
+        estado,
+      });
+    }
     return null;
   }
   const payload = { ...data, cliente_id: clienteId, parentesco: 'Conyuge' };
   delete payload.no_tiene;
   if (existing) {
     await db('dependientes').where({ id: existing.id }).update({ ...payload, updated_at: db.fn.now() });
+    await registrarCambios({
+      clienteId,
+      seccion: 'conyuge',
+      referenciaId: existing.id,
+      antes: existing,
+      despues: data,
+      userId,
+      estado,
+    });
     return normalizarDependiente(await db('dependientes').where({ id: existing.id }).first());
   }
   const [id] = await db('dependientes').insert(payload);
+  await registrarAltaBaja({
+    clienteId,
+    seccion: 'conyuge',
+    referenciaId: id,
+    tipo: 'alta',
+    descripcion: `${data.nombres ?? ''} ${data.apellidos ?? ''}`.trim(),
+    userId,
+    estado,
+  });
   return normalizarDependiente(await db('dependientes').where({ id }).first());
 }
 
@@ -283,21 +328,52 @@ export async function getConyuge(clienteId) {
 
 /* ───────────────────────── Paso 3 — Dependientes ───────────────────────── */
 
-export async function agregarDependiente(clienteId, data) {
+export async function agregarDependiente(clienteId, data, userId) {
+  const { estado } = await getClienteOr404(clienteId);
   const [id] = await db('dependientes').insert({ ...data, cliente_id: clienteId });
+  await registrarAltaBaja({
+    clienteId,
+    seccion: 'dependiente',
+    referenciaId: id,
+    tipo: 'alta',
+    descripcion: `${data.nombres ?? ''} ${data.apellidos ?? ''} (${data.parentesco ?? 'Dependiente'})`.trim(),
+    userId,
+    estado,
+  });
   return normalizarDependiente(await db('dependientes').where({ id }).first());
 }
 
-export async function actualizarDependiente(clienteId, depId, data) {
+export async function actualizarDependiente(clienteId, depId, data, userId) {
   const dep = await db('dependientes').where({ id: depId, cliente_id: clienteId }).first();
   if (!dep) throw notFound('Dependiente no encontrado');
+  const { estado } = await getClienteOr404(clienteId);
   await db('dependientes').where({ id: depId }).update({ ...data, updated_at: db.fn.now() });
+  await registrarCambios({
+    clienteId,
+    seccion: 'dependiente',
+    referenciaId: depId,
+    antes: dep,
+    despues: data,
+    userId,
+    estado,
+  });
   return normalizarDependiente(await db('dependientes').where({ id: depId }).first());
 }
 
-export async function eliminarDependiente(clienteId, depId) {
+export async function eliminarDependiente(clienteId, depId, userId) {
+  const dep = await db('dependientes').where({ id: depId, cliente_id: clienteId }).first();
   const n = await db('dependientes').where({ id: depId, cliente_id: clienteId }).del();
   if (!n) throw notFound('Dependiente no encontrado');
+  const { estado } = await getClienteOr404(clienteId);
+  await registrarAltaBaja({
+    clienteId,
+    seccion: 'dependiente',
+    referenciaId: depId,
+    tipo: 'baja',
+    descripcion: `${dep.nombres} ${dep.apellidos} (${dep.parentesco})`,
+    userId,
+    estado,
+  });
 }
 
 export async function listarDependientes(clienteId) {
@@ -307,10 +383,22 @@ export async function listarDependientes(clienteId) {
 
 /* ───────────────────────── Paso 4 — Ingresos ───────────────────────── */
 
-export async function setIngresoTitular(clienteId, data) {
+export async function setIngresoTitular(clienteId, data, userId) {
+  const { estado } = await getClienteOr404(clienteId);
   const existing = await db('ingresos').where({ cliente_id: clienteId }).whereNull('dependiente_id').first();
   if (data.tiene_ingresos === false) {
-    if (existing) await db('ingresos').where({ id: existing.id }).del();
+    if (existing) {
+      await db('ingresos').where({ id: existing.id }).del();
+      await registrarAltaBaja({
+        clienteId,
+        seccion: 'ingresos',
+        referenciaId: existing.id,
+        tipo: 'baja',
+        descripcion: `Ingresos del titular (${existing.ingresos_anuales})`,
+        userId,
+        estado,
+      });
+    }
     return null;
   }
   const payload = {
@@ -322,18 +410,40 @@ export async function setIngresoTitular(clienteId, data) {
   };
   if (existing) {
     await db('ingresos').where({ id: existing.id }).update({ ...payload, updated_at: db.fn.now() });
+    await registrarCambios({ clienteId, seccion: 'ingresos', referenciaId: existing.id, antes: existing, despues: payload, userId, estado });
     return db('ingresos').where({ id: existing.id }).first();
   }
   const [id] = await db('ingresos').insert(payload);
+  await registrarAltaBaja({
+    clienteId,
+    seccion: 'ingresos',
+    referenciaId: id,
+    tipo: 'alta',
+    descripcion: `Ingresos del titular (${payload.ingresos_anuales})`,
+    userId,
+    estado,
+  });
   return db('ingresos').where({ id }).first();
 }
 
-export async function setIngresoDependiente(clienteId, depId, data) {
+export async function setIngresoDependiente(clienteId, depId, data, userId) {
   const dep = await db('dependientes').where({ id: depId, cliente_id: clienteId }).first();
   if (!dep) throw notFound('Dependiente no encontrado');
+  const { estado } = await getClienteOr404(clienteId);
   const existing = await db('ingresos').where({ dependiente_id: depId }).first();
   if (data.tiene_ingresos === false) {
-    if (existing) await db('ingresos').where({ id: existing.id }).del();
+    if (existing) {
+      await db('ingresos').where({ id: existing.id }).del();
+      await registrarAltaBaja({
+        clienteId,
+        seccion: 'ingresos',
+        referenciaId: existing.id,
+        tipo: 'baja',
+        descripcion: `Ingresos de ${dep.nombres} ${dep.apellidos}`,
+        userId,
+        estado,
+      });
+    }
     return null;
   }
   const payload = {
@@ -345,9 +455,19 @@ export async function setIngresoDependiente(clienteId, depId, data) {
   };
   if (existing) {
     await db('ingresos').where({ id: existing.id }).update({ ...payload, updated_at: db.fn.now() });
+    await registrarCambios({ clienteId, seccion: 'ingresos', referenciaId: existing.id, antes: existing, despues: payload, userId, estado });
     return db('ingresos').where({ id: existing.id }).first();
   }
   const [id] = await db('ingresos').insert(payload);
+  await registrarAltaBaja({
+    clienteId,
+    seccion: 'ingresos',
+    referenciaId: id,
+    tipo: 'alta',
+    descripcion: `Ingresos de ${dep.nombres} ${dep.apellidos}`,
+    userId,
+    estado,
+  });
   return db('ingresos').where({ id }).first();
 }
 
@@ -363,6 +483,12 @@ export async function totalIngresosFamilia(clienteId) {
 /* ───────────────────────── Paso 5 — Plan de salud ───────────────────────── */
 
 export async function setPlanSalud(clienteId, data, userId, versionOrigen = 'cotizado_agente') {
+  // `planes_salud` ya guarda cada cotización como una versión nueva, así
+  // que el historial del plan existe desde siempre — pero el de CAMBIOS
+  // (qué campo concreto se movió) hace falta igual para las renovaciones,
+  // donde el agente retoca un plan ya confirmado.
+  const anterior = await db('planes_salud').where({ cliente_id: clienteId, is_current: true }).first();
+  const { estado } = await getClienteOr404(clienteId);
   await db('planes_salud').where({ cliente_id: clienteId, is_current: true }).update({ is_current: false });
   const [id] = await db('planes_salud').insert({
     ...data,
@@ -371,6 +497,19 @@ export async function setPlanSalud(clienteId, data, userId, versionOrigen = 'cot
     is_current: true,
     creado_por: userId,
   });
+  if (anterior) {
+    await registrarCambios({ clienteId, seccion: 'plan_salud', referenciaId: id, antes: anterior, despues: data, userId, estado });
+  } else {
+    await registrarAltaBaja({
+      clienteId,
+      seccion: 'plan_salud',
+      referenciaId: id,
+      tipo: 'alta',
+      descripcion: data.nombre_plan ?? 'Plan de salud',
+      userId,
+      estado,
+    });
+  }
   return db('planes_salud').where({ id }).first();
 }
 
@@ -436,7 +575,7 @@ function pagoParaMostrar(row) {
  * es un dato de pago regulado, solo se pidió que el agente no pueda volver
  * a leerlo — ver pagoParaMostrar/getDataPointCompleto).
  */
-export async function setPago(clienteId, { numero_tarjeta, numero_cuenta, ...data }) {
+export async function setPago(clienteId, { numero_tarjeta, numero_cuenta, ...data }, userId) {
   const payload = { ...data };
   if (numero_tarjeta) {
     payload.numero_tarjeta_cifrado = encryptCard(numero_tarjeta);
@@ -449,11 +588,39 @@ export async function setPago(clienteId, { numero_tarjeta, numero_cuenta, ...dat
   }
 
   const existing = await db('informacion_pago').where({ cliente_id: clienteId }).first();
+  const { estado } = await getClienteOr404(clienteId);
+  // Del número de tarjeta, la cuenta y el Data Point solo queda registrado
+  // QUE cambiaron — nunca su valor (ver CAMPOS_SIN_VALOR). Por eso se le
+  // pasa al historial el payload MÁS las banderas de los campos sensibles
+  // que vinieron en esta llamada.
+  const despues = {
+    ...payload,
+    ...(numero_tarjeta ? { numero_tarjeta: '***' } : {}),
+    ...(numero_cuenta ? { numero_cuenta: '***' } : {}),
+  };
   if (existing) {
     await db('informacion_pago').where({ id: existing.id }).update({ ...payload, updated_at: db.fn.now() });
+    await registrarCambios({
+      clienteId,
+      seccion: 'pago',
+      referenciaId: existing.id,
+      antes: { ...existing, numero_tarjeta: existing.numero_tarjeta_cifrado ? '***anterior' : null, numero_cuenta: existing.numero_cuenta_cifrado ? '***anterior' : null },
+      despues,
+      userId,
+      estado,
+    });
     return pagoParaMostrar(await db('informacion_pago').where({ id: existing.id }).select(PAGO_COLUMNS_INTERNAS).first());
   }
   const [id] = await db('informacion_pago').insert({ ...payload, cliente_id: clienteId });
+  await registrarAltaBaja({
+    clienteId,
+    seccion: 'pago',
+    referenciaId: id,
+    tipo: 'alta',
+    descripcion: `Método de pago: ${payload.metodo ?? 'tarjeta'}`,
+    userId,
+    estado,
+  });
   return pagoParaMostrar(await db('informacion_pago').where({ id }).select(PAGO_COLUMNS_INTERNAS).first());
 }
 

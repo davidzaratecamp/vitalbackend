@@ -5,11 +5,70 @@ import { notificar } from '../notificaciones/notificaciones.service.js';
 
 const PENDIENTE = 'pendiente_backoffice';
 const PENDIENTE_TRIPARTITA = 'pendiente_llamada_tripartita';
-// Completar/rechazar se puede hacer tanto desde la cola normal como desde
-// "pendiente llamada tripartita" — ese estado es solo una parada intermedia
-// para no confundir "ya lo gestioné, esperando la llamada" con "nadie lo ha
-// tocado todavía", no le quita a BackOffice la posibilidad de cerrarlo.
-const ESTADOS_GESTIONABLES = [PENDIENTE, PENDIENTE_TRIPARTITA];
+
+/**
+ * Qué hace cada acción de BackOffice según de DÓNDE venga el caso.
+ *
+ * Es la misma mesa de trabajo para ventas y para renovaciones (2026-10-27,
+ * pedido del usuario: "en los rechazos debe seguir exactamente el mismo
+ * flujo que ya usa en los rechazos de ventas") — no hay endpoints ni
+ * pantallas duplicadas, solo cambia el estado destino:
+ *
+ *   venta      pendiente_backoffice → aprobado / rechazado_backoffice
+ *                                   → pendiente_llamada_tripartita
+ *   renovación pendiente_backoffice_renovacion → renovado /
+ *                                   rechazado_backoffice_renovacion
+ *                                   → pendiente_autorizacion_renovacion
+ *
+ * `intermedio` es la parada opcional de "ya lo gestioné pero me falta algo"
+ * (la llamada tripartita en ventas, la autorización en renovaciones);
+ * desde esa parada ya no hay otra, por eso queda en null.
+ */
+const DESTINOS = {
+  [PENDIENTE]: {
+    aprobado: 'aprobado',
+    rechazado: 'rechazado_backoffice',
+    intermedio: PENDIENTE_TRIPARTITA,
+    versionPlan: 'confirmado_backoffice',
+  },
+  [PENDIENTE_TRIPARTITA]: {
+    aprobado: 'aprobado',
+    rechazado: 'rechazado_backoffice',
+    intermedio: null,
+    versionPlan: 'confirmado_backoffice',
+  },
+  pendiente_backoffice_renovacion: {
+    aprobado: 'renovado',
+    rechazado: 'rechazado_backoffice_renovacion',
+    intermedio: 'pendiente_autorizacion_renovacion',
+    versionPlan: 'confirmado_backoffice_renovacion',
+  },
+  pendiente_autorizacion_renovacion: {
+    aprobado: 'renovado',
+    rechazado: 'rechazado_backoffice_renovacion',
+    intermedio: null,
+    versionPlan: 'confirmado_backoffice_renovacion',
+  },
+};
+
+/**
+ * Resuelve a dónde va este caso, o corta si BackOffice no lo tiene en sus
+ * manos. El mensaje distingue los dos mundos para que no desoriente.
+ */
+function destinoDe(cliente) {
+  const destino = DESTINOS[cliente.estado];
+  if (!destino) {
+    throw conflict(
+      cliente.estado?.endsWith('_renovacion') || cliente.estado === 'pendiente_renovacion'
+        ? 'Esta renovación no está pendiente de BackOffice'
+        : 'Este cliente no está pendiente de BackOffice'
+    );
+  }
+  return destino;
+}
+
+/** true si el caso viene del flujo de renovaciones y no del de ventas. */
+const esRenovacion = (estado) => estado in DESTINOS && DESTINOS[estado].aprobado === 'renovado';
 
 /**
  * Un backoffice solo ve/gestiona clientes de agentes de SU MISMA empresa
@@ -82,7 +141,7 @@ export async function listarCola(filters = {}, empresaId) {
 export async function completar(clienteId, userId, data, empresaId) {
   const cliente = await getClienteOr404(clienteId);
   await assertMismaEmpresa(cliente, empresaId);
-  if (!ESTADOS_GESTIONABLES.includes(cliente.estado)) throw conflict('Este cliente no está pendiente de BackOffice');
+  const destino = destinoDe(cliente);
 
   const planActual = await getPlanSaludActual(clienteId);
   if (!planActual) throw badRequest('El cliente no tiene un plan de salud cotizado por el agente');
@@ -96,7 +155,14 @@ export async function completar(clienteId, userId, data, empresaId) {
     faltantes.push('Gasto máximo de bolsillo');
   }
   if (!data.npn) faltantes.push('NPN');
-  if (faltantes.length) throw badRequest('Completa los datos de póliza antes de cerrar la venta', faltantes);
+  if (faltantes.length) {
+    throw badRequest(
+      destino.aprobado === 'renovado'
+        ? 'Completa los datos de póliza antes de cerrar la renovación'
+        : 'Completa los datos de póliza antes de cerrar la venta',
+      faltantes
+    );
+  }
 
   await setPlanSalud(
     clienteId,
@@ -116,24 +182,34 @@ export async function completar(clienteId, userId, data, empresaId) {
       estado_prima: data.estado_prima,
     },
     userId,
-    'confirmado_backoffice'
+    destino.versionPlan
   );
 
-  await db('clientes').where({ id: clienteId }).update({ estado: 'aprobado', updated_at: db.fn.now() });
-  await logEstado(clienteId, cliente.estado, 'aprobado', userId);
+  await db('clientes').where({ id: clienteId }).update({ estado: destino.aprobado, updated_at: db.fn.now() });
+  await logEstado(clienteId, cliente.estado, destino.aprobado, userId);
+  // Al renovar se le avisa al agente: a diferencia de una venta aprobada
+  // (que el agente acaba de subir y está mirando), una renovación pasó por
+  // su bandeja días antes y el cierre le llega de sorpresa.
+  if (destino.aprobado === 'renovado') {
+    await notificar(cliente.agente_id, {
+      tipo: 'renovacion_aprobada',
+      clienteId,
+      mensaje: `BackOffice renovó la póliza de ${cliente.nombres} ${cliente.apellidos}.`,
+    });
+  }
   return getClienteOr404(clienteId);
 }
 
 export async function rechazar(clienteId, userId, motivo, empresaId) {
   const cliente = await getClienteOr404(clienteId);
   await assertMismaEmpresa(cliente, empresaId);
-  if (!ESTADOS_GESTIONABLES.includes(cliente.estado)) throw conflict('Este cliente no está pendiente de BackOffice');
-  await db('clientes').where({ id: clienteId }).update({ estado: 'rechazado_backoffice', updated_at: db.fn.now() });
-  await logEstado(clienteId, cliente.estado, 'rechazado_backoffice', userId, motivo);
+  const destino = destinoDe(cliente);
+  await db('clientes').where({ id: clienteId }).update({ estado: destino.rechazado, updated_at: db.fn.now() });
+  await logEstado(clienteId, cliente.estado, destino.rechazado, userId, motivo);
   await notificar(cliente.agente_id, {
     tipo: 'rechazo',
     clienteId,
-    mensaje: `BackOffice rechazó a ${cliente.nombres} ${cliente.apellidos}: ${motivo}`,
+    mensaje: `BackOffice rechazó ${esRenovacion(cliente.estado) ? 'la renovación de' : 'a'} ${cliente.nombres} ${cliente.apellidos}: ${motivo}`,
   });
   return getClienteOr404(clienteId);
 }
@@ -147,8 +223,17 @@ export async function rechazar(clienteId, userId, motivo, empresaId) {
 export async function marcarPendienteTripartita(clienteId, userId, motivo, empresaId) {
   const cliente = await getClienteOr404(clienteId);
   await assertMismaEmpresa(cliente, empresaId);
-  if (cliente.estado !== PENDIENTE) throw conflict('Este cliente no está pendiente de BackOffice');
-  await db('clientes').where({ id: clienteId }).update({ estado: PENDIENTE_TRIPARTITA, updated_at: db.fn.now() });
-  await logEstado(clienteId, cliente.estado, PENDIENTE_TRIPARTITA, userId, motivo || null);
+  const destino = destinoDe(cliente);
+  // Desde la parada intermedia ya no hay otra — ahí solo queda aprobar o
+  // rechazar (ver DESTINOS).
+  if (!destino.intermedio) {
+    throw conflict(
+      esRenovacion(cliente.estado)
+        ? 'Esta renovación ya está pendiente de autorización'
+        : 'Este cliente ya está pendiente de llamada tripartita'
+    );
+  }
+  await db('clientes').where({ id: clienteId }).update({ estado: destino.intermedio, updated_at: db.fn.now() });
+  await logEstado(clienteId, cliente.estado, destino.intermedio, userId, motivo || null);
   return getClienteOr404(clienteId);
 }

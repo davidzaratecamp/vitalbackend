@@ -120,7 +120,7 @@ router.patch(
   validate(titularSchema.partial()),
   asyncHandler(async (req, res) => {
     await assertCanEdit(req);
-    res.json(await svc.actualizarTitular(req.params.id, req.body));
+    res.json(await svc.actualizarTitular(req.params.id, req.body, req.user.id));
   })
 );
 
@@ -226,7 +226,7 @@ router.put(
   validate(conyugeSchema),
   asyncHandler(async (req, res) => {
     await assertCanEdit(req);
-    res.json(await svc.setConyuge(req.params.id, req.body));
+    res.json(await svc.setConyuge(req.params.id, req.body, req.user.id));
   })
 );
 
@@ -266,7 +266,7 @@ router.post(
   validate(dependienteSchema),
   asyncHandler(async (req, res) => {
     await assertCanEdit(req);
-    res.status(201).json(await svc.agregarDependiente(req.params.id, req.body));
+    res.status(201).json(await svc.agregarDependiente(req.params.id, req.body, req.user.id));
   })
 );
 
@@ -276,7 +276,7 @@ router.patch(
   validate(dependienteSchema.partial()),
   asyncHandler(async (req, res) => {
     await assertCanEdit(req);
-    res.json(await svc.actualizarDependiente(req.params.id, req.params.depId, req.body));
+    res.json(await svc.actualizarDependiente(req.params.id, req.params.depId, req.body, req.user.id));
   })
 );
 
@@ -285,7 +285,7 @@ router.delete(
   loadCliente,
   asyncHandler(async (req, res) => {
     await assertCanEdit(req);
-    await svc.eliminarDependiente(req.params.id, req.params.depId);
+    await svc.eliminarDependiente(req.params.id, req.params.depId, req.user.id);
     res.json({ ok: true });
   })
 );
@@ -317,7 +317,7 @@ router.put(
   validate(ingresoSchema),
   asyncHandler(async (req, res) => {
     await assertCanEdit(req);
-    res.json(await svc.setIngresoTitular(req.params.id, req.body));
+    res.json(await svc.setIngresoTitular(req.params.id, req.body, req.user.id));
   })
 );
 
@@ -327,7 +327,7 @@ router.put(
   validate(ingresoSchema),
   asyncHandler(async (req, res) => {
     await assertCanEdit(req);
-    res.json(await svc.setIngresoDependiente(req.params.id, req.params.depId, req.body));
+    res.json(await svc.setIngresoDependiente(req.params.id, req.params.depId, req.body, req.user.id));
   })
 );
 
@@ -427,7 +427,7 @@ router.put(
   validate(pagoSchema),
   asyncHandler(async (req, res) => {
     await assertCanEdit(req);
-    res.json(await svc.setPago(req.params.id, req.body));
+    res.json(await svc.setPago(req.params.id, req.body, req.user.id));
   })
 );
 

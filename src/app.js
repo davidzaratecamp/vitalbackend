@@ -24,6 +24,7 @@ import soportesPolizaRoutes from './modules/soportesPoliza/soportesPoliza.routes
 import notificacionesRoutes from './modules/notificaciones/notificaciones.routes.js';
 import firmasRoutes from './modules/firmas/firmas.routes.js';
 import casosPostventaRoutes from './modules/casosPostventa/casosPostventa.routes.js';
+import renovacionesRoutes from './modules/renovaciones/renovaciones.routes.js';
 import soportesCasoPostventaRoutes from './modules/soportesCasoPostventa/soportesCasoPostventa.routes.js';
 import grabacionesRoutes from './modules/grabaciones/grabaciones.routes.js';
 
@@ -70,6 +71,7 @@ export function createApp() {
   app.use('/api/notificaciones', notificacionesRoutes);
   app.use('/api/firmas', firmasRoutes);
   app.use('/api/casos-postventa', casosPostventaRoutes);
+  app.use('/api/renovaciones', renovacionesRoutes);
   app.use('/api/soportes-caso-postventa', soportesCasoPostventaRoutes);
   app.use('/api/grabaciones', grabacionesRoutes);
 

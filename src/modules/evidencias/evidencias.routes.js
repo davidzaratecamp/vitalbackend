@@ -10,7 +10,7 @@ import { requireAuth } from '../../middleware/auth.js';
 import { badRequest, notFound, forbidden, conflict } from '../../utils/httpError.js';
 import { getClienteOr404, assertAccesoCliente } from '../clientes/clientes.service.js';
 import { assertCasoActivo } from '../casosPostventa/casosPostventa.service.js';
-import { CATEGORIA_EVIDENCIA, ESTADOS_EN_TRAMITE } from '../clientes/clientes.constants.js';
+import { CATEGORIA_EVIDENCIA, ESTADOS_EN_TRAMITE, ESTADOS_RENOVACION } from '../clientes/clientes.constants.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -138,6 +138,29 @@ router.get(
   })
 );
 
+/**
+ * Durante una renovación los documentos SOLO se suman: lo que ya estaba
+ * cargado antes de que abriera la temporada no se puede borrar (2026-10-27,
+ * pedido explícito del usuario: "el agente debe incluir nuevos documentos
+ * OJO: SIN ELIMINAR LOS ANTERIORES"). Lo que el propio agente sube DURANTE
+ * la renovación sí lo puede quitar — si no, un archivo subido por error
+ * quedaría pegado para siempre.
+ *
+ * admin queda afuera de la regla: ya puede eliminar un ID entero, no tiene
+ * sentido bloquearle un archivo.
+ */
+function assertNoBorraEvidenciaVieja(cliente, evidencia, user) {
+  if (user.role === 'admin') return;
+  if (!ESTADOS_RENOVACION.includes(cliente.estado)) return;
+  const desde = cliente.renovacion_iniciada_at;
+  if (!desde) return;
+  if (new Date(evidencia.created_at) < new Date(desde)) {
+    throw forbidden(
+      'Este documento es de antes de la renovación y no se puede eliminar — en una renovación los documentos solo se suman.'
+    );
+  }
+}
+
 router.delete(
   '/:id',
   asyncHandler(async (req, res) => {
@@ -145,6 +168,7 @@ router.delete(
     if (!row) throw notFound('Evidencia no encontrada');
     const cliente = await assertAccess(req, row.cliente_id);
     await assertCanEditEvidencia(req, cliente);
+    assertNoBorraEvidenciaVieja(cliente, row, req.user);
 
     await db('evidencias').where({ id: row.id }).del();
     const fullPath = path.join(env.uploads.dir, row.ruta_archivo);

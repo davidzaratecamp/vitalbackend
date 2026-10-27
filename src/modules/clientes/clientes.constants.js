@@ -20,7 +20,17 @@ export const EMPRESA_VITAL_ASISTE_ID = 2;
 // creándole casos a BackOffice mientras la venta espera esa llamada). A
 // propósito NO incluye 'rechazado_backoffice' — no fue pedido, se puede
 // sumar después si hace falta.
-export const ESTADOS_POSTVENTA = ['aprobado', 'pendiente_backoffice', 'pendiente_llamada_tripartita'];
+// El 2026-10-27 se sumaron 'pendiente_renovacion' y 'renovado': una póliza
+// en temporada de renovación sigue vigente y el cliente llama por lo que
+// sea. Los dos estados de renovación que están EN TRÁMITE con BackOffice
+// quedan afuera, igual que sus equivalentes de venta.
+export const ESTADOS_POSTVENTA = [
+  'aprobado',
+  'pendiente_backoffice',
+  'pendiente_llamada_tripartita',
+  'pendiente_renovacion',
+  'renovado',
+];
 
 // Estados en los que un cliente está "en trámite" con BackOffice — mientras
 // está acá, ni siquiera el agente DUEÑO puede tocar el formulario (evita
@@ -31,7 +41,13 @@ export const ESTADOS_POSTVENTA = ['aprobado', 'pendiente_backoffice', 'pendiente
 // abrir un caso de postventa), reportado como bug por el usuario: "me
 // dijeron que cuando estaba aprobado no era editable por parte del
 // agente" — confirmado y corregido en assertCanEdit/assertCanEditEvidencia.
-export const ESTADOS_EN_TRAMITE = ['pendiente_backoffice', 'pendiente_llamada_tripartita'];
+export const ESTADOS_EN_TRAMITE = [
+  'pendiente_backoffice',
+  'pendiente_llamada_tripartita',
+  // Mismos candados del lado de renovaciones (2026-10-27).
+  'pendiente_backoffice_renovacion',
+  'pendiente_autorizacion_renovacion',
+];
 
 // Mismo prefijo/idea que REASIGNACION_PREFIJO en casosPostventa.constants.js
 // (2026-09-29, exclusividad de BackOffice) — pero este es para reasignar la
@@ -41,6 +57,57 @@ export const ESTADOS_EN_TRAMITE = ['pendiente_backoffice', 'pendiente_llamada_tr
 // tablas de historial distintas) — si cambia el texto, cambiarlo en los dos
 // lados (y en el espejo del frontend, clienteConstants.ts).
 export const REASIGNACION_AGENTE_PREFIJO = '[Reasignación]';
+
+/* ───────────────────────── Renovaciones ───────────────────────── */
+
+/**
+ * Cada 1 de noviembre abre la temporada de renovaciones (2026-10-27, pedido
+ * del usuario): toda póliza vigente pasa de 'aprobado'/'renovado' a
+ * 'pendiente_renovacion' y el agente la vuelve a trabajar con los mismos
+ * formularios de la venta. El ID es SIEMPRE el mismo — una renovación no
+ * crea un registro nuevo, la venta original cambia de estado.
+ *
+ * La fecha es fija y es la única que dispara el paso: una venta aprobada el
+ * 31 de octubre entra al día siguiente (así funciona ACA — esa póliza cubre
+ * hasta el 31 de diciembre y hay que renovarla para el año que viene), y
+ * una aprobada el 2 de noviembre espera hasta el 1 de noviembre siguiente.
+ * Confirmado explícitamente por el usuario el 2026-10-27.
+ */
+export const RENOVACION_MES = 11; // noviembre (1-12)
+export const RENOVACION_DIA = 1;
+
+/** Estados desde los que una póliza vigente entra a la temporada. */
+export const ESTADOS_VIGENTES_PARA_RENOVAR = ['aprobado', 'renovado'];
+
+/** Todo lo que vive en el apartado "Renovaciones" (los 5 estados). */
+export const ESTADOS_RENOVACION = [
+  'pendiente_renovacion',
+  'pendiente_backoffice_renovacion',
+  'pendiente_autorizacion_renovacion',
+  'rechazado_backoffice_renovacion',
+  'renovado',
+];
+
+/**
+ * Donde el agente tiene la pelota: gestiona la renovación y la envía a
+ * BackOffice. Espejo exacto de 'borrador'/'rechazado_backoffice' en el
+ * flujo de venta — por eso el rechazo reusa el mismo camino de corrección.
+ */
+export const ESTADOS_RENOVACION_AGENTE = ['pendiente_renovacion', 'rechazado_backoffice_renovacion'];
+
+/** Donde BackOffice tiene la pelota (espejo de ESTADOS_GESTIONABLES de ventas). */
+export const ESTADOS_RENOVACION_BACKOFFICE = [
+  'pendiente_backoffice_renovacion',
+  'pendiente_autorizacion_renovacion',
+];
+
+/**
+ * Marca en el historial de estados cuando la temporada mueve una póliza
+ * sola (nadie la "cambió" a mano) — mismo patrón que
+ * REASIGNACION_AGENTE_PREFIJO. El frontend lo usa para explicar por qué un
+ * caso apareció en Renovaciones sin que nadie lo tocara.
+ */
+export const APERTURA_RENOVACION_PREFIJO = '[Renovación]';
 
 // Lo que el agente puede ELEGIR hoy en el formulario — y lo único que
 // acepta Zod. Espejo en frontend/src/lib/clienteConstants.ts.
@@ -117,6 +184,14 @@ export const ESTADO_CLIENTE = [
   'pendiente_llamada_tripartita',
   'aprobado',
   'rechazado_backoffice',
+  // Renovaciones (2026-10-27, pedido del usuario) — ver el bloque de
+  // Renovaciones más abajo. Van al final del ENUM a propósito: agregar un
+  // valor al final de un ENUM de MySQL no reescribe la tabla.
+  'pendiente_renovacion',
+  'pendiente_backoffice_renovacion',
+  'pendiente_autorizacion_renovacion',
+  'rechazado_backoffice_renovacion',
+  'renovado',
 ];
 export const ESTADO_CLIENTE_LABEL = {
   borrador: 'Borrador',
@@ -124,4 +199,9 @@ export const ESTADO_CLIENTE_LABEL = {
   pendiente_llamada_tripartita: 'Pendiente llamada tripartita',
   aprobado: 'Aprobado',
   rechazado_backoffice: 'Rechazado por BackOffice',
+  pendiente_renovacion: 'Pendiente renovación',
+  pendiente_backoffice_renovacion: 'Pendiente BackOffice renovación',
+  pendiente_autorizacion_renovacion: 'Pendiente autorización renovación',
+  rechazado_backoffice_renovacion: 'Rechazo BackOffice renovación',
+  renovado: 'Renovado',
 };

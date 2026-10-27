@@ -1,6 +1,7 @@
 import { createApp } from './app.js';
 import { env } from './config/env.js';
 import { db } from './db/knex.js';
+import { arrancarTemporadaAutomatica } from './modules/renovaciones/renovaciones.service.js';
 
 const app = createApp();
 
@@ -16,6 +17,13 @@ async function start() {
   const server = app.listen(env.port, () => {
     console.log(`Vital API escuchando en http://localhost:${env.port}`);
   });
+
+  // Temporada de renovaciones: chequea al arrancar y cada 6 horas si hay
+  // pólizas que les toca pasar a 'pendiente_renovacion' (el 1 de noviembre
+  // de cada año). Es idempotente, así que repetir el chequeo no mueve nada
+  // dos veces — y si el servidor estuvo caído justo ese día, al volver las
+  // mueve igual. Ver renovaciones.service.js.
+  arrancarTemporadaAutomatica();
 
   const shutdown = async () => {
     console.log('\nCerrando servidor...');
