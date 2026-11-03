@@ -1,12 +1,16 @@
 import { Router } from 'express';
+import { z } from 'zod';
 import { asyncHandler } from '../../utils/asyncHandler.js';
 import { requireAuth, requireRole } from '../../middleware/auth.js';
 import { getClienteOr404, getClienteDetalle, assertAccesoCliente } from '../clientes/clientes.service.js';
 import { fechaFiltroValida } from '../../utils/fechaFiltro.js';
+import { validate } from '../../middleware/validate.js';
+import { restaurarDesdePapelera } from '../clientes/papelera.js';
 import * as svc from './admin.service.js';
 
 const router = Router();
-// Todas las rutas de este módulo son de solo lectura — por eso el
+// Todas las rutas de este módulo son de solo lectura — salvo restaurar
+// desde la papelera, que es solo admin (ver abajo) — por eso el
 // supervisor entra con el mismo requireRole que admin, sin duplicar
 // pantallas ni endpoints (ver migración 20260919100000_rol_supervisor).
 router.use(requireAuth, requireRole('admin', 'supervisor'));
@@ -97,6 +101,32 @@ router.get(
         },
         { page, pageSize }
       )
+    );
+  })
+);
+
+/**
+ * Devolver a venta un registro de la papelera (2026-11-03, pedido del
+ * usuario), eligiendo a qué agente va. Solo admin. Ver
+ * restaurarDesdePapelera en clientes/papelera.js: con copia completa vuelve
+ * con el mismo ID; sin copia queda asignado para que el agente lo rehaga.
+ */
+const restaurarSchema = z.object({
+  agente_id: z.coerce.number().int().positive(),
+  observacion: z.string().trim().max(500).optional(),
+});
+
+router.post(
+  '/papelera/:id/restaurar',
+  requireRole('admin'),
+  validate(restaurarSchema),
+  asyncHandler(async (req, res) => {
+    res.json(
+      await restaurarDesdePapelera(req.params.id, {
+        agenteId: req.body.agente_id,
+        observacion: req.body.observacion || null,
+        admin: req.user,
+      })
     );
   })
 );

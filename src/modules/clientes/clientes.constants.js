@@ -86,7 +86,18 @@ export const ESTADOS_RENOVACION = [
   'pendiente_autorizacion_renovacion',
   'rechazado_backoffice_renovacion',
   'renovado',
+  'no_renovado',
 ];
+
+/**
+ * Cierre negativo de la temporada (2026-11-03, pedido del usuario): el
+ * agente no logró renovar y lo deja dicho con una observación obligatoria.
+ * La póliza deja de estar vigente — no vuelve a entrar en temporadas
+ * siguientes (no está en ESTADOS_VIGENTES_PARA_RENOVAR) y tampoco abre
+ * postventa. Queda en solo lectura para todos; si fue un error, admin la
+ * devuelve a 'pendiente_renovacion'.
+ */
+export const ESTADOS_SOLO_LECTURA = ['no_renovado'];
 
 /**
  * Donde el agente tiene la pelota: gestiona la renovación y la envía a
@@ -192,6 +203,8 @@ export const ESTADO_CLIENTE = [
   'pendiente_autorizacion_renovacion',
   'rechazado_backoffice_renovacion',
   'renovado',
+  // 2026-11-03 — el agente no pudo renovar (ver ESTADOS_SOLO_LECTURA).
+  'no_renovado',
 ];
 export const ESTADO_CLIENTE_LABEL = {
   borrador: 'Borrador',
@@ -204,4 +217,5 @@ export const ESTADO_CLIENTE_LABEL = {
   pendiente_autorizacion_renovacion: 'Pendiente autorización renovación',
   rechazado_backoffice_renovacion: 'Rechazo BackOffice renovación',
   renovado: 'Renovado',
+  no_renovado: 'No renovado',
 };

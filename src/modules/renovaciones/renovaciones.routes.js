@@ -105,4 +105,39 @@ router.post(
   })
 );
 
+/**
+ * "No se pudo renovar" (2026-11-03, pedido del usuario) — solo el agente
+ * dueño, con observación obligatoria.
+ */
+const noRenovadoSchema = z.object({
+  observacion: z.string().trim().min(5, 'Escribe por qué no se pudo renovar (mínimo 5 caracteres)').max(1000),
+});
+
+router.post(
+  '/:id/no-renovado',
+  requireRole('agente'),
+  validate(noRenovadoSchema),
+  asyncHandler(async (req, res) => {
+    const cliente = await getClienteOr404(req.params.id);
+    await assertAccesoCliente(cliente, req.user);
+    if (cliente.agente_id !== req.user.id) {
+      throw forbidden('Solo el agente dueño de la póliza puede marcarla como no renovada');
+    }
+    res.json(await svc.marcarNoRenovado(cliente.id, req.user.id, req.body.observacion));
+  })
+);
+
+/** Admin deshace un "No se pudo renovar" marcado por error. */
+const reabrirSchema = z.object({ motivo: z.string().trim().max(500).optional() }).optional();
+
+router.post(
+  '/:id/reabrir',
+  requireRole('admin'),
+  validate(reabrirSchema),
+  asyncHandler(async (req, res) => {
+    const cliente = await getClienteOr404(req.params.id);
+    res.json(await svc.reabrirRenovacion(cliente.id, req.user.id, req.body?.motivo || null));
+  })
+);
+
 export default router;

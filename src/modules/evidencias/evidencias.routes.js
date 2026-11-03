@@ -10,7 +10,7 @@ import { requireAuth } from '../../middleware/auth.js';
 import { badRequest, notFound, forbidden, conflict } from '../../utils/httpError.js';
 import { getClienteOr404, assertAccesoCliente } from '../clientes/clientes.service.js';
 import { assertCasoActivo } from '../casosPostventa/casosPostventa.service.js';
-import { CATEGORIA_EVIDENCIA, ESTADOS_EN_TRAMITE, ESTADOS_RENOVACION } from '../clientes/clientes.constants.js';
+import { CATEGORIA_EVIDENCIA, ESTADOS_EN_TRAMITE, ESTADOS_RENOVACION, ESTADOS_SOLO_LECTURA } from '../clientes/clientes.constants.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -56,6 +56,9 @@ async function assertAccess(req, clienteId) {
 // agente de su empresa) y BackOffice, solo si tienen un caso de postventa
 // activo para ese cliente.
 async function assertCanEditEvidencia(req, cliente) {
+  if (ESTADOS_SOLO_LECTURA.includes(cliente.estado)) {
+    throw conflict('Esta póliza quedó como no renovada — si fue un error, pídele a un admin que la reabra.');
+  }
   if (req.user.role === 'agente') {
     if (cliente.agente_id === req.user.id) {
       if (ESTADOS_EN_TRAMITE.includes(cliente.estado)) {

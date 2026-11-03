@@ -920,7 +920,17 @@ export async function papelera(filters = {}, { page = 1, pageSize = 50 } = {}) {
   const base = () => applyFiltersPapelera(db('clientes_eliminados'), filters);
 
   const [{ n: total }] = await base().count({ n: 'id' });
+  // Sin `snapshot`: es la copia completa del cliente (pesada y con datos
+  // cifrados) — la pantalla solo necesita saber si existe.
   const rows = await base()
+    .select(
+      'id', 'cliente_id_original', 'nombres', 'apellidos', 'social', 'correo_electronico', 'phone_1',
+      'estado_previo', 'agente_id', 'agente_nombre', 'empresa_id', 'eliminado_por', 'eliminado_por_nombre',
+      'eliminado_por_rol', 'ip_origen', 'observacion', 'created_at',
+      'restaurado_at', 'restaurado_por_nombre', 'restaurado_agente_id', 'restaurado_agente_nombre',
+      'restaurado_cliente_id', 'restaurado_observacion',
+      db.raw('snapshot IS NOT NULL as tiene_copia')
+    )
     .orderBy('created_at', 'desc')
     .limit(pageSize)
     .offset((page - 1) * pageSize);
@@ -930,6 +940,6 @@ export async function papelera(filters = {}, { page = 1, pageSize = 50 } = {}) {
     page_size: pageSize,
     total: Number(total),
     total_pages: Math.ceil(Number(total) / pageSize) || 1,
-    rows,
+    rows: rows.map((r) => ({ ...r, tiene_copia: !!r.tiene_copia })),
   };
 }

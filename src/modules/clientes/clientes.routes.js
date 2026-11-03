@@ -18,7 +18,10 @@ import {
   ESTADO_PRIMA,
   METODO_PAGO,
   ESTADOS_EN_TRAMITE,
+  ESTADOS_SOLO_LECTURA,
 } from './clientes.constants.js';
+
+import * as papelera from './papelera.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -52,6 +55,10 @@ async function loadCliente(req, _res, next) {
 // BackOffice: mismo candado que un ajeno, solo mientras el caso está
 // escalado a su cola.
 async function assertCanEdit(req) {
+  // 'no_renovado' (2026-11-03) queda en solo lectura para todos los roles.
+  if (ESTADOS_SOLO_LECTURA.includes(req.cliente.estado)) {
+    throw conflict('Esta póliza quedó como no renovada — si fue un error, pídele a un admin que la reabra.');
+  }
   if (req.user.role === 'agente') {
     if (req.cliente.agente_id === req.user.id) {
       if (ESTADOS_EN_TRAMITE.includes(req.cliente.estado)) {
@@ -104,12 +111,22 @@ const titularSchema = z.object({
   respuesta_seguridad: mayus(z.string().min(2).max(160)),
 });
 
+// `papelera_id` (2026-11-03): el agente está rehaciendo un registro que
+// admin le devolvió desde la papelera y que no tenía copia completa — se
+// valida antes de crear y después queda enlazado (ver papelera.js). Va en
+// un schema aparte para que nunca llegue al UPDATE del titular.
+const crearClienteSchema = titularSchema.extend({
+  papelera_id: z.coerce.number().int().positive().optional(),
+});
+
 router.post(
   '/',
   requireRole('agente'),
-  validate(titularSchema),
+  validate(crearClienteSchema),
   asyncHandler(async (req, res) => {
-    const cliente = await svc.crearCliente(req.user.id, req.body);
+    const { papelera_id: papeleraId, ...datos } = req.body;
+    if (papeleraId) await papelera.assertPuedeRehacer(papeleraId, req.user.id);
+    const cliente = await svc.crearCliente(req.user.id, datos, { papeleraId });
     res.status(201).json(cliente);
   })
 );
@@ -128,6 +145,16 @@ router.get(
   '/',
   asyncHandler(async (req, res) => {
     res.json(await svc.listarClientes(req.user, { estado: req.query.estado, q: req.query.q }));
+  })
+);
+
+// Antes de /:id. Registros de la papelera que admin le asignó al agente
+// para volver a registrar (los eliminados sin copia completa).
+router.get(
+  '/papelera-asignados',
+  requireRole('agente'),
+  asyncHandler(async (req, res) => {
+    res.json(await papelera.pendientesDeRehacer(req.user.id));
   })
 );
 

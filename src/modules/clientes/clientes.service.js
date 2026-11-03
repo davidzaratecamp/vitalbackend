@@ -1,8 +1,6 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { db } from '../../db/knex.js';
 import { registrarCambios, registrarAltaBaja } from './historialCambios.js';
-import { env } from '../../config/env.js';
+import { armarSnapshot, marcarRehecho } from './papelera.js';
 import { notFound, forbidden, conflict, badRequest } from '../../utils/httpError.js';
 import { notificarRol } from '../notificaciones/notificaciones.service.js';
 import { encryptCard, decryptCard, detectarMarca } from '../../utils/cardCrypto.js';
@@ -77,14 +75,13 @@ const ESTADOS_ELIMINABLES_POR_ROL = {
  * planes_salud, informacion_pago, evidencias, historial, observaciones,
  * firmas_documentos, soportes_poliza) — la única que NO tiene CASCADE a
  * propósito es accesos_tarjeta (es un log de auditoría), así que se borra
- * aparte primero para no chocar con la FK. Los archivos físicos
- * (evidencias/soportes) se borran del disco después de que la fila de la
- * base ya se fue.
+ * aparte primero para no chocar con la FK.
  *
  * Antes de borrar, deja una foto en `clientes_eliminados` — la "papelera"
- * que ve admin (2026-09-26, pedido del usuario) — no es un soft-delete
- * (dependientes/evidencias/etc. sí se pierden), solo un registro de
- * auditoría de qué cliente existió y quién lo eliminó.
+ * que ve admin (2026-09-26, pedido del usuario). Desde 2026-11-03 la foto
+ * incluye una copia completa de todas las filas del cliente y los archivos
+ * se quedan en disco, para que admin lo pueda devolver a venta con el
+ * mismo ID (ver papelera.js).
  */
 export async function eliminarCliente(clienteId, userRole, userId, { observacion = null, ipOrigen = null } = {}) {
   const cliente = await getClienteOr404(clienteId);
@@ -99,9 +96,11 @@ export async function eliminarCliente(clienteId, userRole, userId, { observacion
     }
   }
 
-  const [agente, usuario] = await Promise.all([
+  const [agente, usuario, snapshot] = await Promise.all([
     db('usuarios_sistema').where({ id: cliente.agente_id }).first('name', 'empresa_id'),
     db('usuarios_sistema').where({ id: userId }).first('name'),
+    // Copia completa para poder devolverlo a venta (2026-11-03, ver papelera.js).
+    armarSnapshot(clienteId),
   ]);
   await db('clientes_eliminados').insert({
     cliente_id_original: cliente.id,
@@ -119,19 +118,14 @@ export async function eliminarCliente(clienteId, userRole, userId, { observacion
     eliminado_por_rol: userRole,
     ip_origen: ipOrigen,
     observacion,
+    snapshot: JSON.stringify(snapshot),
   });
-
-  const archivos = [
-    ...(await db('evidencias').where({ cliente_id: clienteId }).select('ruta_archivo')),
-    ...(await db('soportes_poliza').where({ cliente_id: clienteId }).select('ruta_archivo')),
-  ];
 
   await db('accesos_tarjeta').where({ cliente_id: clienteId }).del();
   await db('clientes').where({ id: clienteId }).del();
-
-  for (const { ruta_archivo } of archivos) {
-    fs.unlink(path.join(env.uploads.dir, ruta_archivo), () => {});
-  }
+  // Los archivos (evidencias, soportes) ya NO se borran del disco: la copia
+  // de la papelera apunta a ellos y vuelven a servir tal cual si admin lo
+  // restaura.
 }
 
 export async function logEstado(clienteId, estadoAnterior, estadoNuevo, userId, motivo = null) {
@@ -225,11 +219,17 @@ async function assertSocialCorreoDisponibles({ social, correo_electronico }, exc
   if (conflictos.length) throw conflict('Ya existe otro cliente con ese dato — verifica que no sea un error de tipeo', conflictos);
 }
 
-export async function crearCliente(agenteId, data) {
+export async function crearCliente(agenteId, data, { papeleraId } = {}) {
   await assertSocialCorreoDisponibles(data);
   const payload = cifrarRespuesta({ ...data, agente_id: agenteId, estado: 'borrador' });
   const [id] = await db('clientes').insert(payload);
-  await logEstado(id, null, 'borrador', agenteId);
+  if (papeleraId) {
+    const row = await db('clientes_eliminados').where({ id: papeleraId }).first('cliente_id_original');
+    await marcarRehecho(papeleraId, id);
+    await logEstado(id, null, 'borrador', agenteId, `[Papelera] Registro rehecho a partir del ID eliminado ${row.cliente_id_original}.`);
+  } else {
+    await logEstado(id, null, 'borrador', agenteId);
+  }
   return getClienteOr404(id);
 }
 

@@ -176,7 +176,14 @@ export async function listarRenovaciones(user, filters = {}) {
       'c.submitted_at',
       'c.updated_at',
       'ag.name as agente_nombre',
-      'e.nombre as empresa_nombre'
+      'e.nombre as empresa_nombre',
+      // La observación con la que el agente la cerró como no renovada —
+      // vive en el historial, igual que el motivo de un rechazo.
+      db.raw(
+        `(SELECT h.motivo FROM historial_estados_cliente h
+          WHERE h.cliente_id = c.id AND h.estado_nuevo = 'no_renovado'
+          ORDER BY h.created_at DESC, h.id DESC LIMIT 1) as motivo_no_renovado`
+      )
     )
     .whereIn('c.estado', estados)
     .orderBy('c.updated_at', 'desc')
@@ -268,6 +275,50 @@ export async function finalizarRenovacion(clienteId, userId) {
     mensaje: `Renovación ${reenvio ? 'reenviada' : 'nueva'}: ${cliente.nombres} ${cliente.apellidos} entró a la cola.`,
   });
 
+  return getClienteOr404(clienteId);
+}
+
+/* ───────────────────────── No se pudo renovar ───────────────────────── */
+
+/**
+ * El agente no logró renovar (2026-11-03, pedido del usuario): el cliente
+ * no contestó, se fue con otra agencia, ya no califica... Cierra la
+ * renovación en 'no_renovado' con una observación OBLIGATORIA, que queda
+ * como motivo en el historial igual que un rechazo de BackOffice.
+ *
+ * Solo desde donde el agente tiene la pelota (pendiente o rechazada por
+ * BackOffice) — una que está en manos de BackOffice la resuelve BackOffice.
+ */
+export async function marcarNoRenovado(clienteId, userId, observacion) {
+  const cliente = await getClienteOr404(clienteId);
+  if (!ESTADOS_RENOVACION_AGENTE.includes(cliente.estado)) {
+    throw conflict('Solo se puede marcar como no renovada una renovación pendiente o rechazada por BackOffice');
+  }
+
+  await db('clientes').where({ id: clienteId }).update({ estado: 'no_renovado', updated_at: db.fn.now() });
+  await logEstado(clienteId, cliente.estado, 'no_renovado', userId, observacion);
+  return getClienteOr404(clienteId);
+}
+
+/**
+ * Admin la devuelve a 'pendiente_renovacion' si se marcó por error. No se
+ * toca `renovacion_iniciada_at`: sigue siendo la misma temporada, así que
+ * la carta CMS firmada en ella sigue valiendo y las evidencias de antes
+ * siguen protegidas.
+ */
+export async function reabrirRenovacion(clienteId, userId, motivo) {
+  const cliente = await getClienteOr404(clienteId);
+  if (cliente.estado !== 'no_renovado') {
+    throw conflict('Esta póliza no está marcada como no renovada');
+  }
+
+  await db('clientes').where({ id: clienteId }).update({ estado: 'pendiente_renovacion', updated_at: db.fn.now() });
+  await logEstado(clienteId, 'no_renovado', 'pendiente_renovacion', userId, motivo || 'Reabierta por admin');
+  await notificar(cliente.agente_id, {
+    tipo: 'renovacion_abierta',
+    clienteId,
+    mensaje: `Un admin reabrió la renovación de ${cliente.nombres} ${cliente.apellidos} — volvió a "Pendiente renovación".`,
+  });
   return getClienteOr404(clienteId);
 }
 
