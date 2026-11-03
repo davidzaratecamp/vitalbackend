@@ -86,10 +86,22 @@ async function assertMismaEmpresa(cliente, empresaId) {
 
 export async function listarCola(filters = {}, empresaId) {
   const estado = filters.estado || PENDIENTE;
+  // "Completados" (estado 'aprobado') es un historial de lo que BackOffice
+  // aprobó, no una foto del estado actual: el 1 de noviembre la temporada de
+  // renovaciones pasa toda póliza aprobada a 'pendiente_renovacion' y la
+  // vista quedaba vacía — BackOffice perdió la visual de las pólizas que
+  // necesita para hacer los primeros pagos (reportado el 2026-11-03). Se
+  // listan las ventas que alguna vez llegaron a 'aprobado' según
+  // historial_estados_cliente, en el estado en que estén hoy.
+  const historicoAprobadas = estado === 'aprobado';
   // Mismo campo que ya se muestra en cada vista: cuándo entró a la cola
   // (pendiente) o cuándo se resolvió (completados/rechazados) — el rango de
-  // fechas filtra por ese.
-  const campoFecha = estado === PENDIENTE ? 'c.submitted_at' : 'c.updated_at';
+  // fechas filtra por ese. En completados es la fecha real de aprobación:
+  // updated_at cambia con cualquier movimiento posterior (la apertura de la
+  // temporada lo pisó en todas).
+  const campoFecha = estado === PENDIENTE
+    ? 'c.submitted_at'
+    : historicoAprobadas ? 'COALESCE(ap.aprobado_at, c.updated_at)' : 'c.updated_at';
   const q = db('clientes as c')
     .leftJoin('usuarios_sistema as ag', 'ag.id', 'c.agente_id')
     .select(
@@ -103,17 +115,29 @@ export async function listarCola(filters = {}, empresaId) {
       'c.updated_at',
       'ag.name as agente_nombre'
     )
-    .where('c.estado', estado)
     // La cola de pendientes es FIFO (el más antiguo primero); las vistas de
     // completados/rechazados son un historial, así que muestran lo más
     // reciente primero.
-    .orderBy(campoFecha, estado === PENDIENTE ? 'asc' : 'desc')
+    .orderByRaw(`${campoFecha} ${estado === PENDIENTE ? 'asc' : 'desc'}`)
     .limit(200);
+
+  if (historicoAprobadas) {
+    const aprobaciones = db('historial_estados_cliente')
+      .where('estado_nuevo', 'aprobado')
+      .groupBy('cliente_id')
+      .select('cliente_id', db.raw('MAX(created_at) as aprobado_at'));
+    q.leftJoin(aprobaciones.as('ap'), 'ap.cliente_id', 'c.id')
+      .select(db.raw(`${campoFecha} as aprobado_at`))
+      // Sin fila en el historial (no debería pasar) pero aprobado hoy: igual cuenta.
+      .where((b) => b.whereNotNull('ap.cliente_id').orWhere('c.estado', 'aprobado'));
+  } else {
+    q.where('c.estado', estado);
+  }
 
   if (empresaId) q.andWhere('ag.empresa_id', empresaId);
   if (filters.agenteId) q.andWhere('c.agente_id', filters.agenteId);
-  if (filters.desde) q.andWhere(campoFecha, '>=', filters.desde);
-  if (filters.hasta) q.andWhere(campoFecha, '<=', `${filters.hasta} 23:59:59`);
+  if (filters.desde) q.andWhereRaw(`${campoFecha} >= ?`, [filters.desde]);
+  if (filters.hasta) q.andWhereRaw(`${campoFecha} <= ?`, [`${filters.hasta} 23:59:59`]);
   if (filters.q) {
     const like = `%${filters.q}%`;
     // El ID también cuenta como búsqueda — a pedido del usuario
