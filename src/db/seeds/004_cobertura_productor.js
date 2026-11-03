@@ -1,7 +1,8 @@
 /**
- * Datos de "BaseEstadosy CoberturasVitaldato 2026.xlsx" (Luis Vitier) y
+ * Datos de "BaseEstadosy CoberturasVitaldato 2026.xlsx" (Luis Vitier),
  * "Base Coberturas Nuevos NPN'S vital 23_09_2026.xlsx" (Jessica Trujillo,
- * Samuel Payne, Talia Bordon — actualizado 2026-09-23), ambos compartidos
+ * Samuel Payne — actualizado 2026-09-23) y "Coberturas Actualizadas TALIA
+ * BORDON.xlsx" (Talia Bordon — actualizado 2026-11-03), todos compartidos
  * por el usuario — igual que 002_cobertura_zip.js, quedan acá como datos
  * planos, no como dependencia del Excel. Nombres de aseguradora ya
  * normalizados para calzar con el catálogo (AMBETTER→Ambetter,
@@ -72,20 +73,45 @@ const COBERTURA_POR_PRODUCTOR = {
     Tennessee: ['Oscar', 'UHC'],
     Indiana: ['UHC'],
   },
+  // Talia Bordon: actualizado desde "Coberturas Actualizadas TALIA
+  // BORDON.xlsx" (compartido por el usuario, 2026-11-03) — reemplaza por
+  // completo lo que tenía (pasa de 8 a 18 estados). Mismas normalizaciones:
+  // ANTHEM / WELLPOINT (y el typo WELLPONT de Texas) → Anthem + Wellpoint,
+  // CHRISTUS → Christus (aseguradora nueva, ver NUEVAS_ASEGURADORAS abajo).
   'Talia Bordon': {
-    Texas: ['Ambetter', 'Oscar', 'UHC', 'Cigna'],
-    Georgia: ['Ambetter', 'Oscar', 'UHC', 'Cigna'],
+    Texas: ['Antidote', 'Ambetter', 'Oscar', 'UHC', 'Cigna', 'Molina', 'Harbor Health', 'Christus', 'Anthem', 'Wellpoint'],
+    Georgia: ['Ambetter', 'Oscar', 'UHC', 'Cigna', 'Anthem', 'Wellpoint'],
+    'South Carolina': ['Ambetter', 'Oscar', 'UHC', 'Cigna'],
     'North Carolina': ['Ambetter', 'Oscar', 'UHC', 'Cigna'],
-    'South Carolina': ['Ambetter', 'UHC', 'Cigna'],
-    Florida: ['Oscar', 'UHC'],
+    Florida: ['Oscar', 'UHC', 'Cigna', 'Anthem', 'Wellpoint'],
+    Missouri: ['Ambetter', 'Oscar', 'UHC', 'Anthem', 'Wellpoint'],
+    Ohio: ['Antidote', 'Oscar', 'UHC', 'Anthem', 'Wellpoint'],
+    Tennessee: ['Ambetter', 'Oscar', 'UHC'],
+    Indiana: ['UHC', 'Anthem', 'Wellpoint'],
+    Arizona: ['Antidote', 'Oscar', 'UHC'],
     Michigan: ['Oscar', 'UHC'],
-    Missouri: ['Oscar', 'UHC'],
-    Tennessee: ['Oscar', 'UHC'],
+    Oklahoma: ['Oscar', 'UHC'],
+    Mississippi: ['Oscar', 'UHC'],
+    Illinois: ['Oscar', 'UHC'],
+    Alabama: ['Oscar', 'UHC'],
+    California: ['Anthem', 'Wellpoint', 'Molina'],
+    Colorado: ['Anthem', 'Wellpoint', 'UHC'],
+    Virginia: ['Anthem', 'Wellpoint', 'Oscar', 'UHC'],
   },
 };
 
+// Aseguradoras que aparecen por primera vez en un archivo de cobertura por
+// productor y todavía no estaban en el catálogo. Se crean acá (y no solo en
+// 002_cobertura_zip.js) para que este seed se pueda correr solo con
+// `--specific` sin perder filas.
+const NUEVAS_ASEGURADORAS = ['Christus'];
+
 /** @param {import('knex').Knex} knex */
 export async function seed(knex) {
+  for (const nombre of NUEVAS_ASEGURADORAS) {
+    await knex('aseguradoras').insert({ nombre }).onConflict('nombre').ignore();
+  }
+
   const productores = await knex('npn_productores').select('id', 'nombre');
   const productorIdPorNombre = new Map(productores.map((p) => [p.nombre, p.id]));
 
