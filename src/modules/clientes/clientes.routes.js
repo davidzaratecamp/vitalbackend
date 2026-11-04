@@ -84,7 +84,9 @@ const titularSchema = z.object({
   apellidos: mayus(z.string().min(2).max(120)),
   sexo: z.enum(SEXO),
   fecha_nacimiento: fecha,
-  social: soloDigitos(9),
+  // Opcional desde 2026-11-04 (pedido del usuario). Vacío llega como null:
+  // '' chocaría en el índice UNIQUE con el siguiente cliente sin SSN.
+  social: z.preprocess((v) => (v === '' ? null : v), soloDigitos(9).nullable().optional()),
   estatus_migratorio: z.enum(ESTATUS_MIGRATORIO),
   direccion: mayus(z.string().min(3).max(200)),
   tipo_vivienda: mayus(z.string().max(60).optional().nullable()),
