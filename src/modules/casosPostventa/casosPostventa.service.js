@@ -56,7 +56,7 @@ export async function crearCaso(clienteId, user, data) {
   const cliente = await db('clientes').where({ id: clienteId }).first('id', 'estado', 'agente_id');
   if (!cliente) throw notFound('Cliente no encontrado');
   if (!ESTADOS_POSTVENTA.includes(cliente.estado)) {
-    throw badRequest('Solo se pueden crear casos de postventa para clientes aprobados, pendientes de BackOffice o pendientes de llamada tripartita');
+    throw badRequest('Solo se pueden crear casos de postventa para clientes aprobados, pendientes de BackOffice o pendientes de autorización del cliente');
   }
   if (user.role === 'agente' && cliente.agente_id !== user.id) {
     if (!user.empresa_id) throw forbidden('Tu cuenta no tiene una empresa asignada — pídele a un admin que la configure');

@@ -209,7 +209,7 @@ export const ESTADO_CLIENTE = [
 export const ESTADO_CLIENTE_LABEL = {
   borrador: 'Borrador',
   pendiente_backoffice: 'Pendiente BackOffice',
-  pendiente_llamada_tripartita: 'Pendiente llamada tripartita',
+  pendiente_llamada_tripartita: 'Pendiente autorización cliente',
   aprobado: 'Aprobado',
   rechazado_backoffice: 'Rechazado por BackOffice',
   pendiente_renovacion: 'Pendiente renovación',

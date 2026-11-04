@@ -21,21 +21,32 @@ router.use(requireAuth);
  * endpoints de siempre (`/api/clientes`, `/api/evidencias`,
  * `/api/backoffice`), que ya entienden los estados de renovación.
  */
+function filtrosListado(req) {
+  return {
+    estados: req.query.estados ? String(req.query.estados).split(',') : [],
+    q: req.query.q,
+    anio: req.query.anio ? Number(req.query.anio) : undefined,
+    agenteId: req.query.agenteId,
+    desde: fechaFiltroValida(req.query.desde),
+    hasta: fechaFiltroValida(req.query.hasta),
+  };
+}
+
 router.get(
   '/',
   requireRole('agente', 'backoffice', 'admin', 'supervisor'),
   asyncHandler(async (req, res) => {
-    const estados = req.query.estados ? String(req.query.estados).split(',') : [];
-    res.json(
-      await svc.listarRenovaciones(req.user, {
-        estados,
-        q: req.query.q,
-        anio: req.query.anio ? Number(req.query.anio) : undefined,
-        agenteId: req.query.agenteId,
-        desde: fechaFiltroValida(req.query.desde),
-        hasta: fechaFiltroValida(req.query.hasta),
-      })
-    );
+    res.json(await svc.listarRenovaciones(req.user, filtrosListado(req)));
+  })
+);
+
+// Excel de la vista actual (2026-11-04). Mismos roles que pueden exportar
+// en Postventa — el agente no, igual que allá.
+router.get(
+  '/export.xlsx',
+  requireRole('backoffice', 'admin', 'supervisor'),
+  asyncHandler(async (req, res) => {
+    await svc.streamRenovacionesExcel(req.user, filtrosListado(req), res);
   })
 );
 

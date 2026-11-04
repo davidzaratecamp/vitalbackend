@@ -2,6 +2,7 @@ import { db } from '../../db/knex.js';
 import { badRequest, conflict, forbidden } from '../../utils/httpError.js';
 import { getClienteOr404, logEstado } from '../clientes/clientes.service.js';
 import { notificar, notificarRol } from '../notificaciones/notificaciones.service.js';
+import { escribirExcelClientes, obtenerTitularesPorIds } from '../admin/admin.service.js';
 import {
   RENOVACION_MES,
   RENOVACION_DIA,
@@ -212,7 +213,7 @@ export async function listarRenovaciones(user, filters = {}) {
     .whereIn('c.estado', estados)
     // Lo recién trabajado arriba; las que el agente no ha tocado, al final.
     .orderByRaw('ultima_gestion_agente IS NULL, ultima_gestion_agente DESC, c.updated_at DESC')
-    .limit(300);
+    .limit(filters.limite ?? 300);
 
   if (user.role === 'agente') {
     q.andWhere('c.agente_id', user.id);
@@ -241,6 +242,47 @@ export async function listarRenovaciones(user, filters = {}) {
     });
   }
   return q;
+}
+
+/* ───────────────────────── Excel ───────────────────────── */
+
+const SECCION_RENOVACION_EXCEL = {
+  nombre: 'RENOVACIÓN',
+  color: 'FF6D28D9', // violet-700, el color de Renovaciones en la app
+  claro: 'FFEDE9FE', // violet-100
+  cols: [
+    { header: 'Temporada', key: 'renov_temporada', width: 10 },
+    { header: 'Inicio de la renovación', key: 'renov_inicio', width: 17 },
+    { header: 'Última gestión del agente', key: 'renov_ultima_gestion', width: 17 },
+    { header: 'Motivo no renovado', key: 'renov_motivo_no_renovado', width: 40 },
+  ],
+};
+
+/**
+ * Excel del apartado Renovaciones (2026-11-04, pedido del usuario: "así
+ * como tenemos el otro") — el mismo formato del reporte de ventas, con una
+ * sección RENOVACIÓN más. Exporta exactamente lo que la tabla está
+ * mostrando: mismos filtros y misma visibilidad por rol (listarRenovaciones),
+ * pero sin el tope de 300 filas de la pantalla.
+ */
+export async function streamRenovacionesExcel(user, filters, res) {
+  const renovaciones = await listarRenovaciones(user, { ...filters, limite: 20000 });
+  const porId = Object.fromEntries(renovaciones.map((r) => [r.id, r]));
+  const titulares = await obtenerTitularesPorIds(renovaciones.map((r) => r.id));
+  await escribirExcelClientes(titulares, res, {
+    hoja: 'Renovaciones',
+    archivo: 'renovaciones_vital',
+    seccionesExtra: [SECCION_RENOVACION_EXCEL],
+    filaExtra: (c) => {
+      const r = porId[c.id];
+      return {
+        renov_temporada: r.renovacion_anio ?? '',
+        renov_inicio: r.renovacion_iniciada_at ?? '',
+        renov_ultima_gestion: r.ultima_gestion_agente ?? 'Sin gestión',
+        renov_motivo_no_renovado: r.motivo_no_renovado ?? '',
+      };
+    },
+  });
 }
 
 /* ───────────────────────── Enviar a BackOffice ───────────────────────── */

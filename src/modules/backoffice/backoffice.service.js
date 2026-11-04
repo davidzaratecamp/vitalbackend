@@ -254,7 +254,7 @@ export async function marcarPendienteTripartita(clienteId, userId, motivo, empre
     throw conflict(
       esRenovacion(cliente.estado)
         ? 'Esta renovación ya está pendiente de autorización'
-        : 'Este cliente ya está pendiente de llamada tripartita'
+        : 'Este cliente ya está pendiente de autorización del cliente'
     );
   }
   await db('clientes').where({ id: clienteId }).update({ estado: destino.intermedio, updated_at: db.fn.now() });

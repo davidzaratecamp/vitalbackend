@@ -503,6 +503,12 @@ const ESTADO_FILL_EXCEL = {
   pendiente_backoffice: 'FFFEF3C7',
   pendiente_llamada_tripartita: 'FFE0F2FE',
   borrador: 'FFF1F5F9',
+  pendiente_renovacion: 'FFEDE9FE',
+  pendiente_backoffice_renovacion: 'FFFEF3C7',
+  pendiente_autorizacion_renovacion: 'FFE0F2FE',
+  rechazado_backoffice_renovacion: 'FFFEE2E2',
+  renovado: 'FFDDD6FE',
+  no_renovado: 'FFE4E4E7',
 };
 const ESTADO_FONT_EXCEL = {
   aprobado: 'FF15803D',
@@ -510,6 +516,12 @@ const ESTADO_FONT_EXCEL = {
   pendiente_backoffice: 'FFB45309',
   pendiente_llamada_tripartita: 'FF0369A1',
   borrador: 'FF475569',
+  pendiente_renovacion: 'FF6D28D9',
+  pendiente_backoffice_renovacion: 'FFB45309',
+  pendiente_autorizacion_renovacion: 'FF0369A1',
+  rechazado_backoffice_renovacion: 'FFB91C1C',
+  renovado: 'FF5B21B6',
+  no_renovado: 'FF3F3F46',
 };
 
 function agruparPorCliente(rows) {
@@ -601,6 +613,34 @@ function construirColumnasExcel(secciones) {
 
 export async function streamReporteExcel(filters, res) {
   const titulares = await obtenerTitularesParaExcel(filters);
+  await escribirExcelClientes(titulares, res, { hoja: 'Reporte de ventas', archivo: 'reporte_vital' });
+}
+
+/** Mismas columnas de titular que el reporte, para una lista de IDs que ya
+ * se filtró en otro lado (ej. el panel de Renovaciones) — respeta el orden
+ * de `ids`. */
+export async function obtenerTitularesPorIds(ids) {
+  if (!ids.length) return [];
+  const rows = await db('clientes as c')
+    .leftJoin('usuarios_sistema as ag', 'ag.id', 'c.agente_id')
+    .leftJoin('empresas as emp', 'emp.id', 'ag.empresa_id')
+    .select(...TITULAR_EXCEL_COLS, 'ag.name as agente_nombre', 'emp.nombre as empresa_nombre')
+    .whereIn('c.id', ids);
+  const porId = Object.fromEntries(rows.map((r) => [r.id, r]));
+  return ids.map((id) => porId[id]).filter(Boolean);
+}
+
+/**
+ * El Excel de una sola hoja por secciones de color, para cualquier lista
+ * de clientes. Lo usan el reporte de ventas y el de Renovaciones
+ * (2026-11-04, pedido del usuario: "así como tenemos el otro").
+ * `seccionesExtra` va justo después de IDENTIFICACIÓN y `filaExtra(c)`
+ * devuelve los valores de esas columnas para cada cliente.
+ */
+export async function escribirExcelClientes(titulares, res, { hoja, archivo, seccionesExtra = [], filaExtra = () => ({}) }) {
+  // Copias: construirColumnasExcel les anota inicio/fin, y el mismo
+  // SECCIONES_EXCEL se comparte entre los dos reportes.
+  const secciones = [SECCIONES_EXCEL[0], ...seccionesExtra, ...SECCIONES_EXCEL.slice(1)].map((sec) => ({ ...sec }));
   const ids = titulares.map((c) => c.id);
 
   const [conyuges, dependientes, ingresos, planes, pagos, evidencias, firmasRows, historialRows] = ids.length
@@ -647,18 +687,18 @@ export async function streamReporteExcel(filters, res) {
   wb.creator = 'Vital';
   wb.created = new Date();
 
-  const sh = wb.addWorksheet('Reporte de ventas', {
+  const sh = wb.addWorksheet(hoja, {
     pageSetup: { orientation: 'landscape' },
     properties: { defaultRowHeight: 18 },
   });
-  sh.columns = construirColumnasExcel(SECCIONES_EXCEL);
+  sh.columns = construirColumnasExcel(secciones);
 
   // Fila 1: nombre de cada sección, combinado sobre sus columnas, en el
   // color sólido de la sección. Fila 2: encabezado real de cada columna,
   // en el tono claro del mismo color — así cualquiera distingue de un
   // vistazo "esto es Cónyuge", "esto es Pago", etc. sin tener que leer
   // cada encabezado uno por uno.
-  for (const sec of SECCIONES_EXCEL) {
+  for (const sec of secciones) {
     if (sec.fin > sec.inicio) sh.mergeCells(1, sec.inicio, 1, sec.fin);
     for (let c = sec.inicio; c <= sec.fin; c += 1) {
       const cell = sh.getCell(1, c);
@@ -688,8 +728,8 @@ export async function streamReporteExcel(filters, res) {
   // Congela toda la sección IDENTIFICACIÓN (6 columnas) + las 2 filas de
   // encabezado — al desplazarse hacia la derecha por Titular/Cónyuge/etc.
   // siempre se sigue viendo a quién pertenece cada fila.
-  sh.views = [{ state: 'frozen', xSplit: SECCIONES_EXCEL[0].fin, ySplit: 2 }];
-  sh.autoFilter = { from: { row: 2, column: 1 }, to: { row: 2, column: SECCIONES_EXCEL.at(-1).fin } };
+  sh.views = [{ state: 'frozen', xSplit: secciones[0].fin, ySplit: 2 }];
+  sh.autoFilter = { from: { row: 2, column: 1 }, to: { row: 2, column: secciones.at(-1).fin } };
 
   let rowIndex = 3;
   let totalPersonasEnroladas = 0; // para la fila de totales al final
@@ -718,6 +758,7 @@ export async function streamReporteExcel(filters, res) {
       personas_enroladas: personasEnroladas,
       created_at: c.created_at,
       submitted_at: c.submitted_at,
+      ...filaExtra(c),
 
       nombres: c.nombres,
       apellidos: c.apellidos,
@@ -796,7 +837,7 @@ export async function streamReporteExcel(filters, res) {
     // que la agrupación por color se note también bajando por los datos,
     // no solo en el encabezado.
     const esPar = rowIndex % 2 === 0;
-    for (const sec of SECCIONES_EXCEL) {
+    for (const sec of secciones) {
       for (let c2 = sec.inicio; c2 <= sec.fin; c2 += 1) {
         const cell = row.getCell(c2);
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: esPar ? 'FFF8FAFC' : 'FFFFFFFF' } };
@@ -853,7 +894,7 @@ export async function streamReporteExcel(filters, res) {
   // entraron en el export. Franja oscura de punta a punta para que se lea
   // como un cierre, no como una fila de datos más.
   if (titulares.length) {
-    const identSec = SECCIONES_EXCEL[0];
+    const identSec = secciones[0];
     const colLabelDesde = identSec.inicio;
     const colLabelHasta = identSec.inicio + 3; // ID, Estado, Agente, Empresa
     const colEnrolados = identSec.inicio + 4; // Personas enroladas
@@ -875,7 +916,7 @@ export async function streamReporteExcel(filters, res) {
     enroladosCell.font = { bold: true, size: 12, color: { argb: 'FFFFFFFF' } };
     enroladosCell.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
 
-    for (const sec of SECCIONES_EXCEL) {
+    for (const sec of secciones) {
       for (let c2 = sec.inicio; c2 <= sec.fin; c2 += 1) {
         const cell = sh.getCell(rowIndex, c2);
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F172A' } };
@@ -885,7 +926,7 @@ export async function streamReporteExcel(filters, res) {
   }
 
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-  res.setHeader('Content-Disposition', `attachment; filename="reporte_vital_${Date.now()}.xlsx"`);
+  res.setHeader('Content-Disposition', `attachment; filename="${archivo}_${Date.now()}.xlsx"`);
   await wb.xlsx.write(res);
   res.end();
 }
