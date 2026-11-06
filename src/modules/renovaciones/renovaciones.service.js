@@ -153,27 +153,20 @@ export async function resumenTemporada() {
 /* ───────────────────────── El listado ───────────────────────── */
 
 /**
- * Última gestión del AGENTE dueño en esta temporada (2026-11-03, reporte:
- * el filtro de fechas no encontraba lo que el agente había trabajado).
- * `clientes.updated_at` no sirve para eso: la apertura automática de la
- * temporada se lo pisa a todas las pólizas, y editar dependientes, ingresos,
- * plan, pago, evidencias u observaciones no lo toca. Cuenta cualquier
- * cambio en el formulario, observación, archivo subido o cambio de estado
- * hecho por el agente desde que empezó la renovación — menos la apertura
- * automática, que se firma con el agente pero no la hizo él. `null` si el
- * agente todavía no la ha tocado.
+ * Los filtros de fecha van por los CAMBIOS DE ESTADO de la temporada
+ * (2026-11-06, pedido del usuario: "que el rango de fechas sea para ver los
+ * cambios de estado de los casos") — antes iban por cualquier gestión del
+ * agente, y un comentario o un archivo subido ese día también contaba.
+ * Cuenta el de cualquiera (agente que envía o marca "No se pudo renovar",
+ * BackOffice que aprueba o rechaza, admin que reabre) desde que empezó la
+ * renovación, menos la apertura automática de la temporada: esa le pasa a
+ * todas las pólizas a la vez y no dice nada del caso.
  */
-const NUNCA = "TIMESTAMP('1000-01-01')";
-const desdeRenovacion = (alias, autor) =>
-  `${alias}.cliente_id = c.id AND ${alias}.${autor} = c.agente_id AND ${alias}.created_at >= c.renovacion_iniciada_at`;
-const ULTIMA_GESTION_AGENTE_SQL = `NULLIF(GREATEST(
-    COALESCE((SELECT MAX(hc.created_at) FROM historial_cambios_cliente hc WHERE ${desdeRenovacion('hc', 'cambiado_por')}), ${NUNCA}),
-    COALESCE((SELECT MAX(ob.created_at) FROM observaciones ob WHERE ${desdeRenovacion('ob', 'autor_id')}), ${NUNCA}),
-    COALESCE((SELECT MAX(ev.created_at) FROM evidencias ev WHERE ${desdeRenovacion('ev', 'subido_por')}), ${NUNCA}),
-    COALESCE((SELECT MAX(sp.created_at) FROM soportes_poliza sp WHERE ${desdeRenovacion('sp', 'subido_por')}), ${NUNCA}),
-    COALESCE((SELECT MAX(he.created_at) FROM historial_estados_cliente he
-              WHERE ${desdeRenovacion('he', 'cambiado_por')} AND (he.motivo IS NULL OR he.motivo NOT LIKE ?)), ${NUNCA})
-  ), ${NUNCA})`;
+const CAMBIOS_ESTADO_TEMPORADA = `FROM historial_estados_cliente he
+  WHERE he.cliente_id = c.id
+    AND he.created_at >= c.renovacion_iniciada_at
+    AND (he.motivo IS NULL OR he.motivo NOT LIKE ?)`;
+const PREFIJO_APERTURA = `${APERTURA_RENOVACION_PREFIJO}%`;
 
 /**
  * Listado del apartado Renovaciones, con la misma visibilidad por rol que
@@ -208,11 +201,11 @@ export async function listarRenovaciones(user, filters = {}) {
           WHERE h.cliente_id = c.id AND h.estado_nuevo = 'no_renovado'
           ORDER BY h.created_at DESC, h.id DESC LIMIT 1) as motivo_no_renovado`
       ),
-      db.raw(`${ULTIMA_GESTION_AGENTE_SQL} as ultima_gestion_agente`, [`${APERTURA_RENOVACION_PREFIJO}%`])
+      db.raw(`(SELECT MAX(he.created_at) ${CAMBIOS_ESTADO_TEMPORADA}) as ultimo_cambio_estado`, [PREFIJO_APERTURA])
     )
     .whereIn('c.estado', estados)
-    // Lo recién trabajado arriba; las que el agente no ha tocado, al final.
-    .orderByRaw('ultima_gestion_agente IS NULL, ultima_gestion_agente DESC, c.updated_at DESC')
+    // Lo que se movió más reciente arriba; las que no han cambiado de estado, al final.
+    .orderByRaw('ultimo_cambio_estado IS NULL, ultimo_cambio_estado DESC, c.updated_at DESC')
     .limit(filters.limite ?? 300);
 
   if (user.role === 'agente') {
@@ -224,9 +217,21 @@ export async function listarRenovaciones(user, filters = {}) {
 
   if (filters.anio) q.andWhere('c.renovacion_anio', filters.anio);
   if (filters.agenteId) q.andWhere('c.agente_id', filters.agenteId);
-  // HAVING para poder usar el alias del SELECT (MySQL no lo deja en WHERE).
-  if (filters.desde) q.havingRaw('ultima_gestion_agente >= ?', [filters.desde]);
-  if (filters.hasta) q.havingRaw('ultima_gestion_agente <= ?', [`${filters.hasta} 23:59:59`]);
+  // ALGÚN cambio de estado dentro del rango, no solo el último: una póliza
+  // que el agente envió el 2 y BackOffice aprobó el 3 sale en los dos días.
+  if (filters.desde || filters.hasta) {
+    const rango = [];
+    const valores = [PREFIJO_APERTURA];
+    if (filters.desde) {
+      rango.push('he.created_at >= ?');
+      valores.push(filters.desde);
+    }
+    if (filters.hasta) {
+      rango.push('he.created_at <= ?');
+      valores.push(`${filters.hasta} 23:59:59`);
+    }
+    q.whereRaw(`EXISTS (SELECT 1 ${CAMBIOS_ESTADO_TEMPORADA} AND ${rango.join(' AND ')})`, valores);
+  }
   if (filters.q) {
     const like = `%${filters.q}%`;
     // El ID cuenta como búsqueda exacta, igual que en la cola de BackOffice
@@ -253,7 +258,7 @@ const SECCION_RENOVACION_EXCEL = {
   cols: [
     { header: 'Temporada', key: 'renov_temporada', width: 10 },
     { header: 'Inicio de la renovación', key: 'renov_inicio', width: 17 },
-    { header: 'Última gestión del agente', key: 'renov_ultima_gestion', width: 17 },
+    { header: 'Último cambio de estado', key: 'renov_ultimo_cambio_estado', width: 17 },
     { header: 'Motivo no renovado', key: 'renov_motivo_no_renovado', width: 40 },
   ],
 };
@@ -278,7 +283,7 @@ export async function streamRenovacionesExcel(user, filters, res) {
       return {
         renov_temporada: r.renovacion_anio ?? '',
         renov_inicio: r.renovacion_iniciada_at ?? '',
-        renov_ultima_gestion: r.ultima_gestion_agente ?? 'Sin gestión',
+        renov_ultimo_cambio_estado: r.ultimo_cambio_estado ?? 'Sin cambios',
         renov_motivo_no_renovado: r.motivo_no_renovado ?? '',
       };
     },
