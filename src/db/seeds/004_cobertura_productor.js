@@ -2,7 +2,8 @@
  * Datos de "BaseEstadosy CoberturasVitaldato 2026.xlsx" (Luis Vitier),
  * "Base Coberturas Nuevos NPN'S vital 23_09_2026.xlsx" (Jessica Trujillo,
  * Samuel Payne — actualizado 2026-09-23) y "Coberturas Actualizadas TALIA
- * BORDON.xlsx" (Talia Bordon — actualizado 2026-11-03), todos compartidos
+ * BORDON.xlsx" + "Actualización Cobertura TALIA BORDON 6_11_2026.xlsx"
+ * (Talia Bordon — actualizado 2026-11-03 y 2026-11-06), todos compartidos
  * por el usuario — igual que 002_cobertura_zip.js, quedan acá como datos
  * planos, no como dependencia del Excel. Nombres de aseguradora ya
  * normalizados para calzar con el catálogo (AMBETTER→Ambetter,
@@ -78,22 +79,26 @@ const COBERTURA_POR_PRODUCTOR = {
   // completo lo que tenía (pasa de 8 a 18 estados). Mismas normalizaciones:
   // ANTHEM / WELLPOINT (y el typo WELLPONT de Texas) → Anthem + Wellpoint,
   // CHRISTUS → Christus (aseguradora nueva, ver NUEVAS_ASEGURADORAS abajo).
+  // 2026-11-06, "Actualización Cobertura TALIA BORDON 6_11_2026.xlsx": SUMA
+  // (no reemplaza) Ambetter en OH, IN, AZ, MI, OK, MS, IL y AL, y en Texas
+  // "Community Health Care" → Community Health Choice (así se llama en el
+  // catálogo esa aseguradora de Texas).
   'Talia Bordon': {
-    Texas: ['Antidote', 'Ambetter', 'Oscar', 'UHC', 'Cigna', 'Molina', 'Harbor Health', 'Christus', 'Anthem', 'Wellpoint'],
+    Texas: ['Antidote', 'Ambetter', 'Oscar', 'UHC', 'Cigna', 'Molina', 'Harbor Health', 'Christus', 'Anthem', 'Wellpoint', 'Community Health Choice'],
     Georgia: ['Ambetter', 'Oscar', 'UHC', 'Cigna', 'Anthem', 'Wellpoint'],
     'South Carolina': ['Ambetter', 'Oscar', 'UHC', 'Cigna'],
     'North Carolina': ['Ambetter', 'Oscar', 'UHC', 'Cigna'],
     Florida: ['Oscar', 'UHC', 'Cigna', 'Anthem', 'Wellpoint'],
     Missouri: ['Ambetter', 'Oscar', 'UHC', 'Anthem', 'Wellpoint'],
-    Ohio: ['Antidote', 'Oscar', 'UHC', 'Anthem', 'Wellpoint'],
+    Ohio: ['Antidote', 'Oscar', 'UHC', 'Anthem', 'Wellpoint', 'Ambetter'],
     Tennessee: ['Ambetter', 'Oscar', 'UHC'],
-    Indiana: ['UHC', 'Anthem', 'Wellpoint'],
-    Arizona: ['Antidote', 'Oscar', 'UHC'],
-    Michigan: ['Oscar', 'UHC'],
-    Oklahoma: ['Oscar', 'UHC'],
-    Mississippi: ['Oscar', 'UHC'],
-    Illinois: ['Oscar', 'UHC'],
-    Alabama: ['Oscar', 'UHC'],
+    Indiana: ['UHC', 'Anthem', 'Wellpoint', 'Ambetter'],
+    Arizona: ['Antidote', 'Oscar', 'UHC', 'Ambetter'],
+    Michigan: ['Oscar', 'UHC', 'Ambetter'],
+    Oklahoma: ['Oscar', 'UHC', 'Ambetter'],
+    Mississippi: ['Oscar', 'UHC', 'Ambetter'],
+    Illinois: ['Oscar', 'UHC', 'Ambetter'],
+    Alabama: ['Oscar', 'UHC', 'Ambetter'],
     California: ['Anthem', 'Wellpoint', 'Molina'],
     Colorado: ['Anthem', 'Wellpoint', 'UHC'],
     Virginia: ['Anthem', 'Wellpoint', 'Oscar', 'UHC'],
