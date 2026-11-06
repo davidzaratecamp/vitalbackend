@@ -4,7 +4,7 @@ import { armarSnapshot, marcarRehecho } from './papelera.js';
 import { notFound, forbidden, conflict, badRequest } from '../../utils/httpError.js';
 import { notificarRol } from '../notificaciones/notificaciones.service.js';
 import { encryptCard, decryptCard, detectarMarca } from '../../utils/cardCrypto.js';
-import { CATEGORIA_EVIDENCIA_OBLIGATORIA, CATEGORIA_EVIDENCIA_LABEL, EMPRESA_VITAL_ASISTE_ID, ESTADOS_POSTVENTA, REASIGNACION_AGENTE_PREFIJO } from './clientes.constants.js';
+import { CATEGORIA_EVIDENCIA_OBLIGATORIA, CATEGORIA_EVIDENCIA_LABEL, ESTADOS_POSTVENTA, REASIGNACION_AGENTE_PREFIJO } from './clientes.constants.js';
 
 const EDITABLE_STATES = ['borrador', 'rechazado_backoffice'];
 
@@ -640,12 +640,16 @@ export async function getPago(clienteId) {
  * abierto sin restricción — todavía no hay instrucción para restringirlo
  * también ahí ("después te doy el instructivo para Vital").
  */
-export async function assertPuedeVerNumeroTarjeta(cliente, user) {
-  if (user.role === 'admin') return;
-  const agente = await db('usuarios_sistema').where({ id: cliente.agente_id }).first('empresa_id');
-  if (agente?.empresa_id === EMPRESA_VITAL_ASISTE_ID && !user.puede_ver_datos_pago) {
-    throw forbidden('No tienes permiso para ver el número completo de la tarjeta');
-  }
+//
+// 2026-11-06, pedido del usuario: TODO BackOffice ve los datos de pago
+// completos (número, cuenta y Data Point), de cualquier empresa — reemplaza
+// la regla de arriba de "solo quien tenga el permiso individual". El acceso
+// al cliente lo sigue limitando assertAccesoCliente (cada backoffice solo
+// ve su empresa) y cada revelación queda en `accesos_tarjeta`.
+// `puede_ver_datos_pago` sigue sirviendo para cualquier otro rol.
+export async function assertPuedeVerNumeroTarjeta(_cliente, user) {
+  if (user.role === 'admin' || user.role === 'backoffice' || user.puede_ver_datos_pago) return;
+  throw forbidden('No tienes permiso para ver el número completo de la tarjeta');
 }
 
 /**
@@ -655,7 +659,7 @@ export async function assertPuedeVerNumeroTarjeta(cliente, user) {
  * tenga `puede_ver_datos_pago`, sin importar la empresa — hoy solo Camila.
  */
 export function assertPuedeVerDataPoint(user) {
-  if (user.role === 'admin') return;
+  if (user.role === 'admin' || user.role === 'backoffice') return;
   if (!user.puede_ver_datos_pago) throw forbidden('No tienes permiso para ver el Data Point');
 }
 
